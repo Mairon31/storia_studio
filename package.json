@@ -25,7 +25,10 @@
     "desktop:bundle": "node scripts/prepare-desktop-bundle.mjs",
     "desktop:dev": "node scripts/build-desktop.mjs --dev",
     "desktop:build": "node scripts/build-desktop.mjs",
-    "desktop:launcher": "node scripts/build-desktop.mjs --launcher-only"
+    "desktop:launcher": "node scripts/build-desktop.mjs --launcher-only",
+    "docs:dev": "pnpm --filter @storia/docs dev",
+    "docs:build": "pnpm --filter @storia/docs docs:build",
+    "docs:preview": "pnpm --filter @storia/docs preview"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",

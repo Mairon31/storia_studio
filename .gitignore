@@ -15,6 +15,10 @@ apps/desktop/src-tauri/target/
 apps/desktop/src-tauri/gen/
 apps/desktop/src-tauri/resources/runtime/
 
+# VitePress documentation build & cache
+docs/.vitepress/dist/
+docs/.vitepress/cache/
+
 # Environment & local secrets (NEVER commit)
 .env
 .env.*

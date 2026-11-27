@@ -1,111 +1,97 @@
+<div align="center">
+
+<img src="apps/desktop/src-tauri/icons/icon.png" alt="Storia Studio" width="112" height="112" />
+
 # Storia Studio
 
-Local-first 2D & retro non-linear video editor (NLE) with real-time WebGL2 preview, 23 full-pipeline animation styles, 1:1 FFmpeg (GPU NVENC / CPU) export, multi-provider TTS, and live bidirectional AI control via **Model Context Protocol (MCP)**.
+**Estudio de edición y animación de video 2D & Retro *local-first*, con motor WebGL2 a 60 FPS, 23 estilos de animación integrales y dirección en vivo por IA mediante MCP.**
 
-## Key Features
+<p>
+  <strong>Español</strong> ·
+  <a href="docs/i18n/README.en.md">English</a> ·
+  <a href="docs/i18n/README.zh-CN.md">简体中文</a> ·
+  <a href="docs/i18n/README.ru.md">Русский</a> ·
+  <a href="docs/i18n/README.hi.md">हिन्दी</a> ·
+  <a href="docs/i18n/README.pt.md">Português</a>
+</p>
 
-- **Real-Time WebGL2 NLE (`PixiJS v8`):** 60 FPS deterministic preview across `9:16`, `16:9`, `1:1`, and custom resolutions up to 4K, with magnetic timeline snapping, left/right trimming across all tracks (scenes, layers, subtitles, effects, audio, markers), rolling scene edits, and atomic Undo/Redo.
-- **23 Full-Pipeline Animation Styles:** Switching styles transforms characters, procedural backgrounds, sprites, shapes, typography, subtitles, and WebGL2 shaders—including **3D Clay & Toon**, **Kurzgesagt Science Vector**, **Anime Cel-Shaded**, **Retro PSX 1998**, **Paper Cutout Craft**, **Pixel Theater 16-bit**, **Rubber Hose 1930s**, **Amber Noir**, **Greek Mythology**, and Stickman A1–A8 / B1–B8 styles.
-- **Articulated 2D Character Rigs:** Grounded leg IK, bounded arm IK, 24 role-based wardrobes, 26+ hairstyles, expressions, poses, and modular sprite compositing.
-- **CapCut-Grade Subtitles & Motion:** 36 subtitle presets, word-level karaoke highlighting, SRT/VTT import, TikTok/Reels rhythmic pagination, local Whisper transcription, 40 scene transitions with synthesized SFX, and 49 timed video/motion/overlay effects.
-- **1:1 Playwright → FFmpeg Export:** Multi-worker parallel rendering, sub-frame motion blur, `h264_nvenc` / `hevc_nvenc` / `av1_nvenc` with automatic `libx264` fallback, and 2-pass `-16 LUFS` EBU R128 loudness mastering.
-- **Integrated Free Asset & Audio Libraries:** Openverse (CC0/CC-BY SVGs & audio), Iconify (200k+ icons), Wikimedia Commons, Internet Archive Audio, plus local workspace libraries with automatic `credits.txt` attribution.
-- **Multi-Provider TTS:** Local offline synthesis (Windows SAPI, Piper ONNX, Kokoro-82M) and cloud/custom APIs (ElevenLabs, OpenAI-compatible, VoiceStudio, Custom HTTP).
-- **Live MCP & Zero-Trust Remote Access:** Stdio and Streamable HTTP (`/mcp`) with OAuth 2.1 + PKCE (`S256`), ngrok & Cloudflare Tunnel management, 1-click revocable mobile links (`HttpOnly` cookie sessions), and AES-256-GCM secret storage.
+<p>
+  <img src="docs/assets/badge-version.svg" alt="v0.2.0" />
+  <img src="docs/assets/badge-platforms.svg" alt="Windows · macOS · Linux" />
+  <img src="docs/assets/badge-engine.svg" alt="WebGL2 · Rust Tauri v2" />
+  <a href="https://discord.gg/ahJM3hyFWr">
+    <img src="docs/assets/badge-discord.svg" alt="Comunidad de Discord" />
+  </a>
+</p>
 
-## Workspace Layout
+<p>
+  <a href="#descarga-e-inicio-rápido">Descargar</a> ·
+  <a href="docs/README.md">Documentación</a> ·
+  <a href="docs/releases-and-updates.md">Canales Estable y Nightly</a> ·
+  <a href="SECURITY.md">Seguridad</a> ·
+  <a href="https://discord.gg/ahJM3hyFWr">Discord</a>
+</p>
 
-| Package | Description |
+</div>
+
+---
+
+## ¿Qué es Storia Studio?
+
+**Storia Studio** es un editor de video no lineal (NLE) diseñado para creadores de contenido narrativo, educativo, filosófico, Shorts/Reels y animación 2D o retro. Se ejecuta **100% en tu equipo** (Windows, macOS y Linux), protege tus proyectos y credenciales de forma local y permite colaborar en tiempo real con agentes de IA mediante el estándar **Model Context Protocol (MCP)**.
+
+## Lo más destacado
+
+| Capacidad | Qué incluye |
 |---|---|
-| `packages/schema` (`@storia/schema`) | Zod + TypeScript single source of truth for `project.json`, 23 animation styles, 36 subtitle presets, atomic patch operations, and edit receipts. |
-| `packages/renderer` (`@storia/renderer`) | Deterministic PixiJS v8 / WebGL2 engine, GLSL post-processing shaders, `styleEngine`, articulated & stylized character rigs, procedural sets, and word-level subtitles. |
-| `apps/studio` (`@storia/studio`) | React 19 + Vite web editor (desktop & mobile/tablet adaptive UI, 60 FPS interactive viewport, multi-track timeline, live SVG code editor, and `/render` headless harness). |
-| `apps/server` (`@storia/server`) | Fastify REST & WebSocket server, atomic project persistence + `.history/` snapshots, library proxy/cache, OAuth 2.1 provider, encrypted vault, and FFmpeg exporter. |
-| `apps/mcp` (`@storia/mcp`) | MCP server (`stdio` and Streamable HTTP) for live AI direction, batch `edit_audit_and_render`, `direct_and_assemble_video`, frame inspection (`capture_frame`), and export control. |
-| `apps/desktop` (`@storia/desktop`) | Native Rust Desktop App (Tauri v2), System Tray, OS installers (Windows `.exe`/`.msi`, macOS `.dmg`/`.app`, Linux `.deb`/`.rpm`/`.AppImage`), and standalone `storia-launcher` binary. |
+| **Motor WebGL2 a 60 FPS** | Vista previa determinista en `9:16`, `16:9`, `1:1` y hasta **4K**, línea de tiempo multipista con imán, ondas Web Audio, editor de código SVG en vivo y deshacer/rehacer atómico. |
+| **23 estilos de animación integrales** | Cambia el estilo del proyecto y transforma personajes, escenarios, sprites, formas, tipografía, subtítulos y shaders GPU: **3D Clay & Toon**, **Kurzgesagt Vector**, **Anime Cel**, **Retro PSX 1998**, **Paper Cutout**, **Pixel 16-bit**, **Rubber Hose 1930s**, **Noir**, **Mitología** y Stickman A1–B8. |
+| **Personajes 2D articulados** | Cinemática inversa (IK), 24 vestuarios por rol, +26 peinados, poses, expresiones y soporte para sprites modulares. |
+| **Subtítulos, Whisper y Voz TTS** | 36 presets estilo CapCut/Reels con karaoke palabra por palabra, transcripción offline con **Whisper** y voces TTS offline (**SAPI**, **Piper ONNX**, **Kokoro-82M**) o en la nube (**ElevenLabs**, **OpenAI**). |
+| **Exportación 1:1 con FFmpeg** | Renderizado paralelo por GPU (`NVENC`) o CPU (`libx264`), *motion blur* sub-fotograma y masterización de audio en 2 pasadas a **`-16 LUFS`**. |
+| **Librerías libres integradas** | Millones de vectores SVG, íconos, música y SFX gratuitos sin API Key (**Openverse**, **Iconify**, **Wikimedia Commons**, **Internet Archive**, **OpenMoji**) con créditos automáticos en `credits.txt`. |
+| **IA en vivo (MCP) y Zero-Trust** | Control bidireccional (`stdio` y `/mcp` con **OAuth 2.1 + PKCE**), acceso móvil seguro por túnel (`ngrok` / `Cloudflare`), bóveda cifrada `AES-256-GCM` y app nativa en **Rust (Tauri v2)**. |
 
-## Prerequisites
+## Descarga e inicio rápido
 
-- **Node.js** `>= 22.0.0`
-- **pnpm** `11.x` (`corepack enable`)
-- **FFmpeg** available in `PATH` (required for MP4 export, audio DSP, and duration probing)
-- **Playwright Chromium** (for headless 1:1 MP4 export and `capture_frame`)
-- **Python 3.10+** *(optional)* — for local `faster-whisper` transcription and `piper` / `kokoro-onnx` offline TTS
+### Aplicación de escritorio (Windows · macOS · Linux)
 
-## Quick Start
+Descarga el instalador para tu sistema operativo desde la pestaña **Releases** de este repositorio:
+
+- **Estable (`v*`):** recomendado para producción diaria (`.exe`, `.msi`, `.dmg`, `.AppImage`, `.deb`, `.rpm`).
+- **Nightly (`nightly`):** compilación automática en cada commit de `master`. Puedes cambiar entre **Estable** y **Nightly** desde **Ajustes › Actualizaciones** para descargar, verificar con SHA-256 y reiniciar la app en 1 clic.
+
+En el primer inicio, Storia Studio abre un **asistente inicial (Onboarding)** para configurar carpetas, librerías gratuitas, voces y red en menos de un minuto.
+
+### Desde código fuente
 
 ```bash
-# 1. Install dependencies
 pnpm install
-
-# 2. Build all workspace packages
 pnpm build
-
-# 3. Verify environment (Node, FFmpeg, GPU encoders, Chromium)
-pnpm doctor
-
-# 4. Seed the demo project (optional)
-pnpm seed:demo
-
-# 5. Start Editor UI (localhost:5173) + Local Server (localhost:4310)
 pnpm dev
 ```
 
-### Verification & CLI Export
+## Documentación
 
-```bash
-pnpm typecheck
-pnpm test
+Toda la documentación técnica y guías detalladas viven en [`docs/`](docs/README.md):
 
-# Export a project directly from CLI
-pnpm export --project demo_episodum_paradox --resolution 1080p --fps 30 --encoder auto
-```
+- **[Primeros pasos e instalación](docs/getting-started.md)** — Requisitos, Onboarding inicial, comandos de desarrollo y variables de entorno.
+- **[Arquitectura y motor creativo](docs/architecture.md)** — Paquetes del monorepo, 23 estilos, rigs, subtítulos y exportación FFmpeg.
+- **[MCP para IAs y acceso remoto](docs/mcp-and-remote.md)** — Configuración `stdio` y HTTP `/mcp`, OAuth 2.1, túneles y modelo Zero-Trust.
+- **[Releases, canales y actualizaciones](docs/releases-and-updates.md)** — Auto-actualizador Estable/Nightly y compilación Desktop en Rust.
+- **[Política de seguridad](SECURITY.md)** — Arquitectura de seguridad y reporte responsable.
 
-## Native Desktop App, Installers & Rust Launcher (Windows / macOS / Linux)
+## Comunidad
 
-Storia Studio ships a native Rust (Tauri v2) desktop shell and a standalone `storia-launcher` binary under `apps/desktop/src-tauri/`.
+Únete a la comunidad oficial de **Discord** para conocer novedades, nuevas compilaciones Estable y Nightly, soporte y futuras integraciones dentro de Storia Studio:
 
-```bash
-# Regenerate native icons (.png, .ico, .icns) from apps/desktop/src-tauri/icons/icon.svg
-pnpm desktop:icons
+<p>
+  <a href="https://discord.gg/ahJM3hyFWr">
+    <img src="docs/assets/badge-discord.svg" alt="Entrar al Discord de Storia Studio" />
+  </a>
+</p>
 
-# Stage the self-contained production runtime bundle
-pnpm desktop:bundle
+## Licencia
 
-# Run native desktop app in development mode (requires Rust + Tauri CLI)
-pnpm desktop:dev
-
-# Build native OS installers (.exe/.msi, .dmg/.app, .deb/.rpm/.AppImage) + storia-launcher
-pnpm desktop:build
-
-# Build only the standalone Rust CLI launcher
-pnpm desktop:launcher
-```
-
-GitHub Actions (`.github/workflows/release-desktop.yml`) automatically builds native installers and launchers for Windows (`x64`), macOS (`arm64` & `x64`), and Linux (`x64`) on `v*` tags or manual workflow dispatch.
-
-## MCP Integration
-
-- **Local (`stdio`):** Run `pnpm build`, then configure your MCP client using `scripts/mcp-config.example.json` (replace `/path/to/storia_studio/...` with your absolute path).
-- **Remote (`Streamable HTTP`):** Open **Settings › Remote (Tunnel)** in Storia Studio to start an ngrok or Cloudflare tunnel and copy the ready-to-paste MCP config or OAuth 2.1 endpoint (`/mcp`).
-
-## Environment Variables (Optional)
-
-All defaults work out of the box. You can optionally set these in a local `.env` file (never committed):
-
-| Variable | Default | Description |
-|---|---|---|
-| `STORIA_SERVER_HOST` | `127.0.0.1` | Server bind host (`0.0.0.0` for LAN access) |
-| `STORIA_SERVER_PORT` | `4310` | Server HTTP/WebSocket port |
-| `STORIA_PROJECTS_DIR` | `./projects` | Directory for saved projects and exports |
-| `STORIA_VAULT_KEY_PATH` | `~/.storia-studio/.vault.key` | Machine-local AES-256-GCM master key path |
-| `STORIA_MCP_TOKEN` | *(auto-generated)* | Optional static MCP Bearer token override |
-
-## Security
-
-See [SECURITY.md](./SECURITY.md) for details on the Zero-Trust remote access model, AES-256-GCM vault, anti-SSRF protection, and responsible vulnerability reporting.
-
-## License
-
-Copyright (c) 2026 Mairon Mayorga. All rights reserved.  
-See [LICENSE.md](./LICENSE.md) for full license terms.
+Copyright © 2026 Mairon Mayorga. Todos los derechos reservados.  
+Consulta [LICENSE.md](LICENSE.md) para los términos completos de licencia.

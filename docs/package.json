@@ -1,0 +1,16 @@
+{
+  "name": "@storia/docs",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Storia Studio — Minimalist Documentation & GitHub Pages Site (VitePress)",
+  "type": "module",
+  "scripts": {
+    "dev": "vitepress dev .",
+    "docs:build": "vitepress build .",
+    "preview": "vitepress preview ."
+  },
+  "devDependencies": {
+    "vitepress": "^1.6.3",
+    "vue": "^3.5.13"
+  }
+}

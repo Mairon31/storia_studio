@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="192" height="28" role="img" aria-label="WebGL2 and Rust Tauri v2">
+  <rect width="192" height="28" rx="6" fill="#131416" stroke="#2c303a" stroke-width="1"/>
+  <rect x="1" y="1" width="54" height="26" rx="5" fill="#1c1f26"/>
+  <text x="28" y="18" fill="#cbd5e1" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif" font-size="10.5" font-weight="600" text-anchor="middle">ENGINE</text>
+  <text x="123" y="18" fill="#f7c8d6" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif" font-size="11" font-weight="700" text-anchor="middle">WebGL2 · Rust Tauri v2</text>
+</svg>

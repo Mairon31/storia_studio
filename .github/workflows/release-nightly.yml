@@ -7,8 +7,13 @@ on:
       - main
     paths-ignore:
       - "**.md"
+      - "docs/**"
+      - "LICENSE*"
       - ".editorconfig"
       - ".gitignore"
+      - ".gitattributes"
+      - ".github/workflows/ci.yml"
+      - ".github/workflows/pages.yml"
   workflow_dispatch:
 
 concurrency:
@@ -20,6 +25,10 @@ permissions:
 
 jobs:
   build-nightly:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (!contains(github.event.head_commit.message, '[skip nightly]') &&
+       !contains(github.event.head_commit.message, '[skip release]'))
     strategy:
       fail-fast: false
       matrix:
@@ -137,6 +146,12 @@ jobs:
 
   publish-nightly-release:
     needs: build-nightly
+    if: >-
+      success() && (
+        github.event_name == 'workflow_dispatch' ||
+        (!contains(github.event.head_commit.message, '[skip nightly]') &&
+         !contains(github.event.head_commit.message, '[skip release]'))
+      )
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -182,6 +197,21 @@ jobs:
           git tag -f nightly "${{ github.sha }}"
           git push -f origin refs/tags/nightly
 
+      - name: Clean stale assets from existing nightly release (prevents duplicates)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view nightly --repo "${{ github.repository }}" >/dev/null 2>&1; then
+            OLD_ASSETS="$(gh release view nightly --repo "${{ github.repository }}" --json assets --jq '.assets[].name')"
+            for asset in $OLD_ASSETS; do
+              if [ ! -f "release-assets/$asset" ]; then
+                gh release delete-asset nightly "$asset" --repo "${{ github.repository }}" --yes || true
+              fi
+            done
+          fi
+
       - name: Publish / Update Rolling Nightly GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -196,6 +226,7 @@ jobs:
           draft: false
           prerelease: true
           make_latest: false
+          overwrite_files: true
           files: release-assets/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
