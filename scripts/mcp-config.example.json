@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "storia-studio": {
+      "command": "node",
+      "args": ["/path/to/storia_studio/apps/mcp/dist/index.js"],
+      "env": {
+        "STORIA_SERVER_HOST": "127.0.0.1",
+        "STORIA_SERVER_PORT": "4310"
+      }
+    }
+  }
+}

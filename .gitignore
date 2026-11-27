@@ -1,0 +1,59 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build & TypeScript outputs
+dist/
+build/
+.vite/
+.turbo/
+*.tsbuildinfo
+coverage/
+
+# Environment & local secrets (NEVER commit)
+.env
+.env.*
+!.env.example
+.vault.key
+*.pem
+*.key
+.storia-studio/
+
+# Local runtime models, binaries, caches & encrypted configs (600MB+)
+models/*
+!models/.gitkeep
+models/config/
+models/bin/
+models/cache/
+models/tts/
+
+# User projects, media assets, exports & history snapshots
+projects/*
+!projects/.gitkeep
+projects/*/exports/
+projects/*/.cache/
+projects/*/.history/
+
+# Python virtualenvs & bytecode (Whisper / local TTS helpers)
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+
+# Logs & temporary files
+*.log
+npm-debug.log*
+pnpm-debug.log*
+tmp/
+temp/
+
+# OS & Editor files
+.DS_Store
+Thumbs.db
+Desktop.ini
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo

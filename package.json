@@ -1,0 +1,31 @@
+{
+  "name": "storia-studio",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Storia Studio — Local 2D/Retro NLE Video Production Studio with WebGL2 Live Preview, FFmpeg NVENC Export, and Live MCP Control",
+  "type": "module",
+  "packageManager": "pnpm@11.6.0",
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "scripts": {
+    "build": "pnpm -r --if-present build",
+    "typecheck": "pnpm -r --if-present typecheck",
+    "test": "pnpm -r --if-present test",
+    "dev:server": "pnpm --filter @storia/server dev",
+    "dev:studio": "pnpm --filter @storia/studio dev",
+    "dev:mcp": "pnpm --filter @storia/mcp dev",
+    "dev": "pnpm --parallel --filter @storia/server --filter @storia/studio dev",
+    "start:server": "pnpm --filter @storia/server start",
+    "start:mcp": "pnpm --filter @storia/mcp start",
+    "seed:demo": "pnpm --filter @storia/server seed:demo",
+    "export": "pnpm --filter @storia/server export --",
+    "doctor": "node scripts/doctor.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
