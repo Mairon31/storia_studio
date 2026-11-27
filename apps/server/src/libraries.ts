@@ -5,11 +5,11 @@ import { execFile } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { StickmanDirectorBridge } from "./stickmanDirector.js";
+import { resolveDefaultLibrariesConfigPath, resolveDefaultLibraryCacheDir } from "./dataPaths.js";
 import { assertSafePublicRemoteUrl, safeFetchPublicUrl } from "./secretVault.js";
 import { BUILTIN_SVG_BACKGROUNDS, findBuiltinSvgBackground } from "./svgBackgroundCatalog.js";
 
 const execFileAsync = promisify(execFile);
-const __libDirname = path.dirname(fileURLToPath(import.meta.url));
 
 const OPENVERSE_API_BASE = ["https://", "api.openverse.org", "/v1"].join("");
 const WIKIMEDIA_API_BASE = ["https://", "commons.wikimedia.org", "/w/api.php"].join("");
@@ -17,10 +17,10 @@ const ICONIFY_API_BASE = ["https://", "api.iconify.design"].join("");
 const ARCHIVE_ORG_SEARCH_BASE = ["https://", "archive.org", "/advancedsearch.php"].join("");
 const ARCHIVE_ORG_METADATA_BASE = ["https://", "archive.org", "/metadata"].join("");
 const ARCHIVE_ORG_DOWNLOAD_BASE = ["https://", "archive.org", "/download"].join("");
-const DEFAULT_LIBRARIES_CONFIG_PATH = path.resolve(__libDirname, "../../../models/config/libraries.json");
+const DEFAULT_LIBRARIES_CONFIG_PATH = resolveDefaultLibrariesConfigPath();
 const USER_AGENT = "StoriaStudio/0.3 (https://localhost; local-nle-video-editor)";
 /** Persistent local disk cache so external library queries, SVGs & audio never re-download unnecessarily. */
-const REMOTE_CACHE_DIR = path.resolve(__libDirname, "../../../models/cache/libraries");
+const REMOTE_CACHE_DIR = resolveDefaultLibraryCacheDir();
 const SEARCH_CACHE_TTL_MS = 24 * 60 * 60 * 1000;
 
 // Simple concurrency semaphore so parallel <img> / <audio> previews never flood Wikimedia/Openverse with 429s
@@ -313,10 +313,10 @@ export const COMPATIBLE_LIBRARIES_DEFS: Omit<LibraryCatalogItem, "enabled">[] = 
   },
   {
     id: "local_videos",
-    name: "Videos Locales Storia",
-    tagline: "Recursos reutilizables de tus proyectos previos",
+    name: "Biblioteca Local de Proyectos",
+    tagline: "Recursos reutilizables de tu carpeta local de videos",
     description:
-      "Indexa automáticamente fondos SVG, sprites, overlays y audios guardados en tu carpeta local de producciones Storia.",
+      "Indexa automáticamente fondos SVG, sprites, overlays y audios guardados en una carpeta local de producciones configurada por ti.",
     kind: "local",
     assetTypes: ["backgrounds", "sprites", "vectors", "sfx", "music"],
     license: "Local / Propio",
@@ -324,22 +324,22 @@ export const COMPATIBLE_LIBRARIES_DEFS: Omit<LibraryCatalogItem, "enabled">[] = 
     requiresApiKey: false,
     supportsVector: true,
     supportsAudio: true,
-    defaultEnabled: true,
+    defaultEnabled: false,
   },
   {
     id: "local_workspace",
-    name: "Workspace & Stickman Audio",
-    tagline: "Librería local de SFX, BGM y packs de íconos",
+    name: "Carpeta Local de Assets",
+    tagline: "Tu colección personal offline de SVGs, sprites, SFX y música",
     description:
-      "Incluye tus carpetas locales de assets y la biblioteca curada offline de 890+ efectos de sonido y música de Stickman Video Director.",
+      "Indexa una carpeta local de tu equipo con tus propios archivos SVG, efectos de sonido y música para reutilizarlos offline en cualquier proyecto.",
     kind: "local",
     assetTypes: ["icons", "vectors", "sfx", "music"],
-    license: "CC0 / CC-BY / Local",
-    estimatedCount: "890+ SFX/BGM",
+    license: "Local / Propio",
+    estimatedCount: "Local",
     requiresApiKey: false,
     supportsVector: true,
     supportsAudio: true,
-    defaultEnabled: true,
+    defaultEnabled: false,
   },
 ];
 
@@ -503,7 +503,7 @@ async function walkFiles(
   maxDepth = 6,
   depth = 0,
 ): Promise<void> {
-  if (depth > maxDepth) return;
+  if (!dir || depth > maxDepth) return;
   let entries;
   try {
     entries = await fs.readdir(dir, { withFileTypes: true });
@@ -554,9 +554,11 @@ function classifyAudioCategory(filePath: string, name: string): AudioCategory {
 
 export class LibraryManager {
   private readonly videosDir: string;
-  private readonly workspaceAssetsDir: string;
+  private workspaceAssetsDir: string;
   private readonly directorBridge?: StickmanDirectorBridge;
   private readonly librariesConfigPath: string;
+  private readonly exposeLocalVideos: boolean;
+  private exposeLocalWorkspace: boolean;
 
   private vectorIndex: IndexedLocalFile[] = [];
   private vectorById = new Map<string, IndexedLocalFile>();
@@ -570,16 +572,35 @@ export class LibraryManager {
   private readonly cacheTtlMs = 5 * 60 * 1000;
 
   constructor(config: LibraryPathsConfig) {
-    this.videosDir = config.videosDir;
-    this.workspaceAssetsDir = config.workspaceAssetsDir;
+    this.videosDir = (config.videosDir ?? "").trim();
+    this.workspaceAssetsDir = (config.workspaceAssetsDir ?? "").trim();
     this.directorBridge = config.directorBridge;
     this.librariesConfigPath = path.resolve(config.librariesConfigPath ?? DEFAULT_LIBRARIES_CONFIG_PATH);
+    this.exposeLocalVideos = this.videosDir.length > 0;
+    this.exposeLocalWorkspace = this.workspaceAssetsDir.length > 0;
+  }
+
+  setCustomAssetsDir(dirPath: string): void {
+    const clean = dirPath.trim();
+    this.workspaceAssetsDir = clean ? path.resolve(clean) : "";
+    this.exposeLocalWorkspace = this.workspaceAssetsDir.length > 0;
+    this.vectorIndexedAt = 0;
+    this.audioIndexedAt = 0;
+    if (this.enabledMap) {
+      this.enabledMap.local_workspace = this.exposeLocalWorkspace;
+    }
   }
 
   private defaultEnabledMap(): Record<LibraryId, boolean> {
     const out = {} as Record<LibraryId, boolean>;
     for (const def of COMPATIBLE_LIBRARIES_DEFS) {
-      out[def.id] = def.defaultEnabled;
+      if (def.id === "local_videos") {
+        out[def.id] = this.exposeLocalVideos;
+      } else if (def.id === "local_workspace") {
+        out[def.id] = this.exposeLocalWorkspace;
+      } else {
+        out[def.id] = def.defaultEnabled;
+      }
     }
     return out;
   }
@@ -598,6 +619,8 @@ export class LibraryManager {
           }
         }
       }
+      if (!this.exposeLocalVideos) merged.local_videos = false;
+      if (!this.exposeLocalWorkspace) merged.local_workspace = false;
       this.enabledMap = merged;
       return { ...merged };
     } catch {
@@ -613,10 +636,16 @@ export class LibraryManager {
 
   async getLibrariesCatalog(): Promise<{ libraries: LibraryCatalogItem[]; enabled: Record<LibraryId, boolean> }> {
     const enabled = await this.getEnabledLibrariesMap();
-    const libraries: LibraryCatalogItem[] = COMPATIBLE_LIBRARIES_DEFS.map((def) => ({
-      ...def,
-      enabled: Boolean(enabled[def.id]),
-    }));
+    const libraries: LibraryCatalogItem[] = COMPATIBLE_LIBRARIES_DEFS
+      .filter((def) => {
+        if (def.id === "local_videos" && !this.exposeLocalVideos) return false;
+        if (def.id === "local_workspace" && !this.exposeLocalWorkspace) return false;
+        return true;
+      })
+      .map((def) => ({
+        ...def,
+        enabled: Boolean(enabled[def.id]),
+      }));
     return { libraries, enabled };
   }
 
@@ -933,8 +962,8 @@ export class LibraryManager {
     });
 
     // Guard explicitly requested disabled libraries
-    if (source === "videos" && !enabled.local_videos) return emptyDisabled("Videos Locales Storia");
-    if (source === "workspace" && !enabled.local_workspace) return emptyDisabled("Workspace & Stickman Audio");
+    if (source === "videos" && !enabled.local_videos) return emptyDisabled("Biblioteca Local de Proyectos");
+    if (source === "workspace" && !enabled.local_workspace) return emptyDisabled("Carpeta Local de Assets");
     if (source === "iconify" && !enabled.iconify) return emptyDisabled("Iconify Vector Hub");
     if (source === "openverse" && !enabled.openverse) return emptyDisabled("Openverse");
     if (source === "wikimedia" && !enabled.wikimedia) return emptyDisabled("Wikimedia Commons");

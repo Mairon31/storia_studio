@@ -5,13 +5,17 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import {
+  resolveDefaultConnectivityConfigPath,
+  resolveDefaultLocalBinDir,
+  REPO_RUNTIME_ROOT,
+} from "./dataPaths.js";
 import { decryptSecret, encryptSecret, redactSecrets } from "./secretVault.js";
 
 const execFileAsync = promisify(execFile);
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DEFAULT_CONFIG_PATH = path.resolve(__dirname, "../../../models/config/connectivity.json");
-const STORIA_STUDIO_ROOT = path.resolve(__dirname, "../../..");
-const LOCAL_BIN_DIR = path.join(STORIA_STUDIO_ROOT, "models", "bin");
+const DEFAULT_CONFIG_PATH = resolveDefaultConnectivityConfigPath();
+const STORIA_STUDIO_ROOT = REPO_RUNTIME_ROOT;
+const LOCAL_BIN_DIR = resolveDefaultLocalBinDir();
 
 const LOOPBACK_HOST = ["127", "0", "0", "1"].join(".");
 const HTTP_SCHEME = "http://";

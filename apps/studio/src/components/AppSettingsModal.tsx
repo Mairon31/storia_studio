@@ -162,6 +162,8 @@ export const AppSettingsModal: React.FC = () => {
   const setActiveLeftTab = useStudioStore((s) => s.setActiveLeftTab);
   const setActiveView = useStudioStore((s) => s.setActiveView);
   const setBusyNotice = useStudioStore((s) => s.setBusyNotice);
+  const setOnboardingOpen = useStudioStore((s) => s.setOnboardingOpen);
+  const setOnboardingStatus = useStudioStore((s) => s.setOnboardingStatus);
 
   const section = (storeSection as SettingsSection) || "render";
   const setSection = (next: SettingsSection) => setStoreSection(next);
@@ -839,7 +841,7 @@ export const AppSettingsModal: React.FC = () => {
                     Librerías de Audio y SFX (Sin API Key)
                   </div>
                   <div>• <strong>Openverse-SFX:</strong> +5.2M de efectos y música CC0/CC-BY con atribución automática.</div>
-                  <div>• <strong>Stickman Director Audio:</strong> +890 pistas BGM y SFX locales listos offline.</div>
+                  <div>• <strong>Wikimedia &amp; Internet Archive:</strong> millones de sonidos, foley y música de dominio público configurables en Ajustes › Librerías.</div>
                 </div>
               </>
             )}
@@ -1402,6 +1404,35 @@ export const AppSettingsModal: React.FC = () => {
                     <option value="verbose" style={{ background: "#14161c", color: "#f3f4f6" }}>Detallado (Diagnóstico)</option>
                   </select>
                 </label>
+
+                <div
+                  className="rounded-xl p-3 flex items-center justify-between gap-3"
+                  style={{ background: "var(--glass-hover)", border: "1px solid var(--border-subtle)" }}
+                >
+                  <div className="min-w-0">
+                    <div className="text-[11.5px] font-medium">Asistente de configuración inicial (Onboarding)</div>
+                    <div className="text-[10.5px]" style={{ color: "var(--text-muted)" }}>
+                      Vuelve a abrir el asistente para revisar carpetas de proyectos, modelos IA, librerías o túneles.
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="studio-btn !px-3 !py-1.5 !text-[11px] shrink-0"
+                    onClick={async () => {
+                      try {
+                        const st = await studioApi.getOnboardingStatus();
+                        setOnboardingStatus(st);
+                        setOpen(false);
+                        setOnboardingOpen(true);
+                      } catch {
+                        setBusyNotice("El asistente de configuración solo está disponible en el equipo local.");
+                        window.setTimeout(() => setBusyNotice(null), 2600);
+                      }
+                    }}
+                  >
+                    Abrir asistente
+                  </button>
+                </div>
               </>
             )}
 

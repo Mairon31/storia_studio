@@ -22,6 +22,7 @@ Local-first 2D & retro non-linear video editor (NLE) with real-time WebGL2 previ
 | `apps/studio` (`@storia/studio`) | React 19 + Vite web editor (desktop & mobile/tablet adaptive UI, 60 FPS interactive viewport, multi-track timeline, live SVG code editor, and `/render` headless harness). |
 | `apps/server` (`@storia/server`) | Fastify REST & WebSocket server, atomic project persistence + `.history/` snapshots, library proxy/cache, OAuth 2.1 provider, encrypted vault, and FFmpeg exporter. |
 | `apps/mcp` (`@storia/mcp`) | MCP server (`stdio` and Streamable HTTP) for live AI direction, batch `edit_audit_and_render`, `direct_and_assemble_video`, frame inspection (`capture_frame`), and export control. |
+| `apps/desktop` (`@storia/desktop`) | Native Rust Desktop App (Tauri v2), System Tray, OS installers (Windows `.exe`/`.msi`, macOS `.dmg`/`.app`, Linux `.deb`/`.rpm`/`.AppImage`), and standalone `storia-launcher` binary. |
 
 ## Prerequisites
 
@@ -59,6 +60,29 @@ pnpm test
 # Export a project directly from CLI
 pnpm export --project demo_episodum_paradox --resolution 1080p --fps 30 --encoder auto
 ```
+
+## Native Desktop App, Installers & Rust Launcher (Windows / macOS / Linux)
+
+Storia Studio ships a native Rust (Tauri v2) desktop shell and a standalone `storia-launcher` binary under `apps/desktop/src-tauri/`.
+
+```bash
+# Regenerate native icons (.png, .ico, .icns) from apps/desktop/src-tauri/icons/icon.svg
+pnpm desktop:icons
+
+# Stage the self-contained production runtime bundle
+pnpm desktop:bundle
+
+# Run native desktop app in development mode (requires Rust + Tauri CLI)
+pnpm desktop:dev
+
+# Build native OS installers (.exe/.msi, .dmg/.app, .deb/.rpm/.AppImage) + storia-launcher
+pnpm desktop:build
+
+# Build only the standalone Rust CLI launcher
+pnpm desktop:launcher
+```
+
+GitHub Actions (`.github/workflows/release-desktop.yml`) automatically builds native installers and launchers for Windows (`x64`), macOS (`arm64` & `x64`), and Linux (`x64`) on `v*` tags or manual workflow dispatch.
 
 ## MCP Integration
 

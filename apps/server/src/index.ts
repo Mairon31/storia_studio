@@ -1,18 +1,37 @@
-import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { buildServer } from "./app.js";
 import { ConnectivityManager, readBootstrapBindSettings } from "./connectivity.js";
+import {
+  resolveDefaultConnectivityConfigPath,
+  resolveDefaultLibrariesConfigPath,
+  resolveDefaultModelsRootDir,
+  resolveDefaultOAuthStorePath,
+  resolveDefaultOnboardingConfigPath,
+  resolveDefaultProjectsDir,
+  resolveDefaultStudioDistDir,
+  resolveDefaultTtsModelsDir,
+} from "./dataPaths.js";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const defaultProjectsDir = path.resolve(__dirname, "../../../projects");
-
-const boot = await readBootstrapBindSettings();
+const connectivityConfigPath = resolveDefaultConnectivityConfigPath();
+const boot = await readBootstrapBindSettings(connectivityConfigPath);
 const port = boot.port;
 const host = boot.host;
-const projectsDir = process.env.STORIA_PROJECTS_DIR ?? defaultProjectsDir;
+const projectsDir = resolveDefaultProjectsDir();
+const modelsDir = resolveDefaultModelsRootDir();
+const studioDistDir = resolveDefaultStudioDistDir();
+const ttsModelsDir = resolveDefaultTtsModelsDir();
+const librariesConfigPath = resolveDefaultLibrariesConfigPath();
+const oauthStorePath = resolveDefaultOAuthStorePath();
+const onboardingConfigPath = resolveDefaultOnboardingConfigPath();
 
 const app = await buildServer({
   projectsDir,
+  modelsDir,
+  studioDistDir,
+  ttsModelsDir,
+  connectivityConfigPath,
+  librariesConfigPath,
+  oauthStorePath,
+  onboardingConfigPath,
   listeningHost: host,
   listeningPort: port,
   logger: true,

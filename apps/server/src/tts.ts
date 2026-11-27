@@ -4,6 +4,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
+import { resolveDefaultTtsModelsDir } from "./dataPaths.js";
 import { probeAudioDurationSec } from "./libraries.js";
 import {
   decryptSecret,
@@ -16,7 +17,7 @@ import {
 const execFileAsync = promisify(execFile);
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const LOCAL_TTS_SCRIPT = path.resolve(__dirname, "../../../scripts/tts_local.py");
-const DEFAULT_MODELS_DIR = path.resolve(__dirname, "../../../models/tts");
+const DEFAULT_MODELS_DIR = resolveDefaultTtsModelsDir();
 
 const ELEVENLABS_BASE = ["https://", "api.elevenlabs.io", "/v1"].join("");
 const OPENAI_DEFAULT_BASE = ["https://", "api.openai.com", "/v1"].join("");

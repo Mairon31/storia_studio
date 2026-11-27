@@ -254,7 +254,7 @@ export const AnimationStyleModal: React.FC<{
               <div className="text-[14px] font-bold flex items-center gap-2">
                 Estilos de Animación ({ANIMATION_STYLE_LIST.length})
                 <span className="text-[10px] font-mono-code px-2 py-0.5 rounded-full" style={{ background: "var(--glass-hover)", color: "var(--accent-teal)" }}>
-                  Storia + Stickman Director A1–A8 &amp; B1–B8
+                  3D · Kurzgesagt · Anime · Pixel · PSX · A1–B8
                 </span>
               </div>
               <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>

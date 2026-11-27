@@ -17,6 +17,7 @@ import {
   ExportJob,
   LibraryCatalogItem,
   LibraryId,
+  OnboardingStatusPayload,
   ProjectSummary,
   studioApi,
   SystemCapabilities,
@@ -30,8 +31,8 @@ const DEFAULT_ENABLED_LIBRARIES: Record<LibraryId, boolean> = {
   pixel_game_sprites: false,
   openmoji_props: false,
   svg_backgrounds: false,
-  local_videos: true,
-  local_workspace: true,
+  local_videos: false,
+  local_workspace: false,
 };
 
 export type LeftTab = "scenes" | "assets" | "vectors" | "audio" | "tts" | "transitions" | "effects" | "cast" | "subtitles" | "fx" | "styles";
@@ -262,6 +263,8 @@ interface StudioState {
   exportModalOpen: boolean;
   remoteAuthRequired: boolean;
   remoteAuthMessage: string | null;
+  onboardingStatus: OnboardingStatusPayload | null;
+  onboardingOpen: boolean;
 
   // Actions
   bootstrap: () => Promise<void>;
@@ -322,6 +325,8 @@ interface StudioState {
   cancelExport: (jobId: string) => Promise<void>;
   upsertExportJobFromSocket: (job: ExportJob, refreshFiles?: boolean) => void;
   setRemoteAuthRequired: (required: boolean, message?: string | null) => void;
+  setOnboardingOpen: (open: boolean) => void;
+  setOnboardingStatus: (status: OnboardingStatusPayload | null) => void;
   clearError: () => void;
 }
 
@@ -386,18 +391,22 @@ export const useStudioStore = create<StudioState>()(
       exportModalOpen: false,
       remoteAuthRequired: false,
       remoteAuthMessage: null,
+      onboardingStatus: null,
+      onboardingOpen: false,
 
       bootstrap: async () => {
         try {
-          const [projects, caps, libs] = await Promise.all([
+          const [projects, caps, libs, onboarding] = await Promise.all([
             studioApi.listProjects().catch(() => []),
             studioApi.getCapabilities().catch(() => null),
             studioApi.getLibrariesCatalog().catch(() => null),
+            studioApi.getOnboardingStatus().catch(() => null),
           ]);
           set({
             projectsList: projects,
             capabilities: caps,
             ...(libs ? { librariesCatalog: libs.libraries, enabledLibraries: libs.enabled } : {}),
+            ...(onboarding ? { onboardingStatus: onboarding, onboardingOpen: onboarding.shouldShow } : {}),
           });
 
           const urlParams =
@@ -409,8 +418,8 @@ export const useStudioStore = create<StudioState>()(
             await get().loadProject(requestedProj, true);
           } else if (projects.length > 0) {
             await get().loadProject(projects[0]!.id, startInEditor);
-          } else {
-            // Seed a demo project on the local server automatically
+          } else if (!onboarding?.shouldShow) {
+            // Seed a demo project on the local server automatically only when onboarding is already completed
             const created = await studioApi.createProject({
               id: "demo_episodum_paradox",
               template: "demo",
@@ -1103,6 +1112,10 @@ export const useStudioStore = create<StudioState>()(
           remoteAuthRequired: required,
           remoteAuthMessage: required ? message : null,
         }),
+
+      setOnboardingOpen: (open) => set({ onboardingOpen: open }),
+
+      setOnboardingStatus: (status) => set({ onboardingStatus: status }),
 
       clearError: () => set({ lastError: null }),
     }),

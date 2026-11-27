@@ -3,8 +3,9 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DEFAULT_OAUTH_STORE_PATH = path.resolve(__dirname, "../../../models/config/mcp-oauth.json");
+import { resolveDefaultOAuthStorePath } from "./dataPaths.js";
+
+const DEFAULT_OAUTH_STORE_PATH = resolveDefaultOAuthStorePath();
 
 export const MCP_OAUTH_DEFAULT_SCOPE = "storia:mcp";
 const AUTH_CODE_TTL_MS = 5 * 60 * 1000; // 5 minutes

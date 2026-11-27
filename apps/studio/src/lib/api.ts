@@ -1012,7 +1012,87 @@ export const studioApi = {
   async getStorageStats(): Promise<StorageStatsResponse> {
     return fetchJson("/api/storage/stats");
   },
+
+  async getOnboardingStatus(): Promise<OnboardingStatusPayload> {
+    return fetchJson("/api/onboarding/status");
+  },
+
+  async completeOnboarding(payload: {
+    projectsDir?: string;
+    modelsDir?: string;
+    customAssetsDir?: string;
+    enabledLibraries?: Partial<Record<LibraryId, boolean>>;
+    connectivity?: {
+      accessMode?: AccessMode;
+      mcpHttpEnabled?: boolean;
+      mcpAuthEnabled?: boolean;
+      tunnelProvider?: TunnelProvider;
+      tunnelAutoStart?: boolean;
+    };
+    preferences?: Partial<OnboardingPreferences>;
+    createStarterProject?: boolean;
+  }): Promise<{
+    ok: boolean;
+    completed: boolean;
+    restartRequired: boolean;
+    starterProjectId: string | null;
+    status: OnboardingStatusPayload;
+  }> {
+    return fetchJson("/api/onboarding/complete", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async skipOnboarding(): Promise<{ ok: boolean; completed: boolean }> {
+    return fetchJson("/api/onboarding/skip", { method: "POST", body: "{}" });
+  },
+
+  async resetOnboarding(): Promise<{ ok: boolean; completed: boolean }> {
+    return fetchJson("/api/onboarding/reset", { method: "POST", body: "{}" });
+  },
 };
+
+export interface OnboardingPreferences {
+  theme: "dark" | "light";
+  language: "es" | "en" | "pt" | "fr";
+  defaultAspectRatio: "9:16" | "16:9" | "1:1";
+  defaultResolution: "720p" | "1080p" | "2k" | "4k";
+  defaultFps: 24 | 30 | 60;
+  defaultTtsProvider: string;
+  whisperModel: "tiny" | "base" | "small" | "medium";
+}
+
+export interface OnboardingStatusPayload {
+  completed: boolean;
+  shouldShow: boolean;
+  isDesktopApp: boolean;
+  localAdminAllowed?: boolean;
+  completedAt?: string;
+  paths: {
+    installDir: string;
+    dataDir: string;
+    projectsDir: string;
+    modelsDir: string;
+    customAssetsDir: string;
+    defaults: {
+      dataDir: string;
+      projectsDir: string;
+      modelsDir: string;
+    };
+  };
+  preferences: OnboardingPreferences;
+  system?: {
+    platform: string;
+    cpus: number;
+    totalMemGb: number;
+    ffmpegAvailable: boolean;
+    ffmpegVersion: string | null;
+    recommendedEncoder: string;
+    nvencAvailable: boolean;
+    pythonAvailable: boolean;
+  };
+}
 
 export interface OAuthStatusSummary {
   enabled: boolean;

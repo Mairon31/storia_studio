@@ -91,13 +91,19 @@ export class StickmanDirectorBridge {
   private fontsCache: BundledFontEntry[] | null = null;
 
   constructor(directorRootDir?: string) {
-    this.rootDir = path.resolve(directorRootDir ?? process.env.STICKMAN_DIRECTOR_DIR ?? DEFAULT_DIRECTOR_ROOT);
-    this.audioLibRoot = path.join(this.rootDir, "assets", "b-audio-library");
-    this.fontsDir = path.join(this.rootDir, "assets", "fonts");
-    this.referencesDir = path.join(this.rootDir, "references");
+    const isDesktop = process.env.STORIA_DESKTOP_APP === "1" || process.env.STORIA_DESKTOP_APP === "true";
+    const resolved =
+      directorRootDir ??
+      process.env.STICKMAN_DIRECTOR_DIR ??
+      (isDesktop ? "" : DEFAULT_DIRECTOR_ROOT);
+    this.rootDir = resolved ? path.resolve(resolved) : "";
+    this.audioLibRoot = this.rootDir ? path.join(this.rootDir, "assets", "b-audio-library") : "";
+    this.fontsDir = this.rootDir ? path.join(this.rootDir, "assets", "fonts") : "";
+    this.referencesDir = this.rootDir ? path.join(this.rootDir, "references") : "";
   }
 
   async isAvailable(): Promise<boolean> {
+    if (!this.audioLibRoot) return false;
     try {
       const st = await fs.stat(this.audioLibRoot);
       return st.isDirectory();

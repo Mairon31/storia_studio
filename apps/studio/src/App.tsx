@@ -5,6 +5,7 @@ import { HomeDashboard } from "./components/HomeDashboard";
 import { Inspector } from "./components/Inspector";
 import { LeftSidebar } from "./components/LeftSidebar";
 import { MobileStudioLayout } from "./components/MobileStudioLayout";
+import { OnboardingWizard } from "./components/OnboardingWizard";
 import { RemoteUnlockModal } from "./components/RemoteUnlockModal";
 import { ReplaceResourceModal } from "./components/ReplaceResourceModal";
 import { SvgCodeEditorDrawer } from "./components/SvgCodeEditorDrawer";
@@ -249,6 +250,7 @@ export const App: React.FC = () => {
       <ReplaceResourceModal />
       <SvgCodeEditorDrawer />
       <AppSettingsModal />
+      <OnboardingWizard />
       <RemoteUnlockModal />
     </div>
   );

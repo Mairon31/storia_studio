@@ -10,6 +10,11 @@ build/
 *.tsbuildinfo
 coverage/
 
+# Rust / Tauri Desktop build artifacts & staged runtime bundle
+apps/desktop/src-tauri/target/
+apps/desktop/src-tauri/gen/
+apps/desktop/src-tauri/resources/runtime/
+
 # Environment & local secrets (NEVER commit)
 .env
 .env.*

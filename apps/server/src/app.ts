@@ -74,23 +74,31 @@ import {
   isRemoteTunnelRequest,
   redactSecrets,
 } from "./secretVault.js";
+import {
+  resolveDefaultModelsRootDir,
+  resolveDefaultStudioDistDir,
+} from "./dataPaths.js";
+import { OnboardingManager } from "./onboarding.js";
 import { getSystemCapabilities } from "./system.js";
 import { TtsManager, TtsProviderId } from "./tts.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const DEFAULT_STUDIO_DIST = path.resolve(__dirname, "../../studio/dist");
-const DEFAULT_DOCUMENTS_DIR = path.resolve(__dirname, "../../../..");
+const DEFAULT_STUDIO_DIST = resolveDefaultStudioDistDir();
 
 export interface BuildServerOptions {
   projectsDir: string;
   studioDistDir?: string;
   videosDir?: string;
   workspaceAssetsDir?: string;
+  modelsDir?: string;
   ttsModelsDir?: string;
   stickmanDirectorDir?: string;
   connectivityConfigPath?: string;
   librariesConfigPath?: string;
   oauthStorePath?: string;
+  onboardingConfigPath?: string;
+  bootstrapConfigPath?: string;
+  isDesktopApp?: boolean;
   listeningHost?: string;
   listeningPort?: number;
   logger?: boolean;
@@ -359,12 +367,24 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
   const connectivityManager = new ConnectivityManager(options.connectivityConfigPath);
   const mcpOAuth = new McpOAuthProvider(options.oauthStorePath);
 
+  const effectiveVideosDir = options.videosDir ?? process.env.STORIA_VIDEOS_DIR ?? "";
+  const effectiveWorkspaceAssetsDir = options.workspaceAssetsDir ?? process.env.STORIA_WORKSPACE_ASSETS_DIR ?? "";
+  const effectiveModelsDir = options.modelsDir ?? resolveDefaultModelsRootDir();
+
   const libraryManager = new LibraryManager({
-    videosDir: options.videosDir ?? process.env.STORIA_VIDEOS_DIR ?? path.join(DEFAULT_DOCUMENTS_DIR, "storia-output"),
-    workspaceAssetsDir:
-      options.workspaceAssetsDir ?? process.env.STORIA_WORKSPACE_ASSETS_DIR ?? path.join(DEFAULT_DOCUMENTS_DIR, "assets"),
+    videosDir: effectiveVideosDir,
+    workspaceAssetsDir: effectiveWorkspaceAssetsDir,
     directorBridge,
     librariesConfigPath: options.librariesConfigPath,
+  });
+
+  const onboardingManager = new OnboardingManager({
+    configPath: options.onboardingConfigPath,
+    bootstrapConfigPath: options.bootstrapConfigPath,
+    activeProjectsDir: storage.rootDir,
+    activeModelsDir: effectiveModelsDir,
+    activeCustomAssetsDir: effectiveWorkspaceAssetsDir,
+    isDesktopApp: options.isDesktopApp,
   });
 
   app.addHook("onClose", async () => {
@@ -404,6 +424,9 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
     "/api/connectivity/oauth/",
     "/api/libraries/config",
     "/api/libraries/cache/clear",
+    "/api/onboarding/complete",
+    "/api/onboarding/skip",
+    "/api/onboarding/reset",
     "/api/internal/",
   ];
 
@@ -514,6 +537,146 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
   app.get("/api/system/capabilities", async (req) => {
     const refresh = (req.query as { refresh?: string })?.refresh === "true";
     return getSystemCapabilities(refresh);
+  });
+
+  // ============================================================================
+  // FIRST-RUN DESKTOP / STUDIO ONBOARDING WIZARD
+  // ============================================================================
+
+  app.get("/api/onboarding/status", async (req) => {
+    const admin = checkStrictLocalAdminRequest(req);
+    const [projects, caps, pythonEnv] = await Promise.all([
+      storage.list(),
+      getSystemCapabilities(false),
+      checkPythonEnvironment().catch(() => null),
+    ]);
+    const status = await onboardingManager.getStatus({ existingProjectCount: projects.length });
+    return {
+      ...status,
+      // Only show onboarding to the local host desktop user, never over remote tunnels/LAN
+      shouldShow: admin.ok ? status.shouldShow : false,
+      localAdminAllowed: admin.ok,
+      system: {
+        platform: caps.platform,
+        cpus: caps.cpus,
+        totalMemGb: caps.totalMemGb,
+        ffmpegAvailable: Boolean(caps.ffmpegVersion),
+        ffmpegVersion: caps.ffmpegVersion,
+        recommendedEncoder: caps.recommendedEncoder,
+        nvencAvailable: Boolean(caps.encoders.h264_nvenc),
+        pythonAvailable: Boolean(pythonEnv?.pythonBin),
+      },
+    };
+  });
+
+  app.post("/api/onboarding/complete", async (req, reply) => {
+    const admin = checkStrictLocalAdminRequest(req);
+    if (!admin.ok) {
+      return reply.status(403).send({ error: "local_admin_required", message: admin.reason });
+    }
+
+    const body = z
+      .object({
+        projectsDir: z.string().max(500).optional(),
+        modelsDir: z.string().max(500).optional(),
+        customAssetsDir: z.string().max(500).optional(),
+        enabledLibraries: z.record(z.string(), z.boolean()).optional(),
+        connectivity: z
+          .object({
+            accessMode: z.enum(["local", "lan"]).optional(),
+            mcpHttpEnabled: z.boolean().optional(),
+            mcpAuthEnabled: z.boolean().optional(),
+            tunnelProvider: z.enum(["none", "ngrok", "cloudflare"]).optional(),
+            tunnelAutoStart: z.boolean().optional(),
+          })
+          .optional(),
+        preferences: z
+          .object({
+            theme: z.enum(["dark", "light"]).optional(),
+            language: z.enum(["es", "en", "pt", "fr"]).optional(),
+            defaultAspectRatio: z.enum(["9:16", "16:9", "1:1"]).optional(),
+            defaultResolution: z.enum(["720p", "1080p", "2k", "4k"]).optional(),
+            defaultFps: z.union([z.literal(24), z.literal(30), z.literal(60)]).optional(),
+            defaultTtsProvider: z.string().max(64).optional(),
+            whisperModel: z.enum(["tiny", "base", "small", "medium"]).optional(),
+          })
+          .optional(),
+        createStarterProject: z.boolean().optional().default(true),
+      })
+      .parse(req.body ?? {});
+
+    if (body.customAssetsDir !== undefined) {
+      libraryManager.setCustomAssetsDir(body.customAssetsDir);
+    }
+
+    if (body.enabledLibraries && Object.keys(body.enabledLibraries).length > 0) {
+      await libraryManager.updateEnabledLibraries(
+        body.enabledLibraries as Partial<Record<LibraryId, boolean>>,
+      );
+    }
+
+    if (body.connectivity) {
+      await connectivityManager.updateConfig(body.connectivity);
+    }
+
+    const { state, restartRequired } = await onboardingManager.complete({
+      projectsDir: body.projectsDir,
+      modelsDir: body.modelsDir,
+      customAssetsDir: body.customAssetsDir,
+      preferences: body.preferences,
+      skipped: false,
+    });
+
+    // Optionally seed a clean starter project if the workspace has none yet
+    let starterProjectId: string | null = null;
+    if (body.createStarterProject) {
+      const existing = await storage.list();
+      if (existing.length === 0) {
+        const demo = createDemoProject("starter_story_project");
+        demo.name = "Mi Primer Video — Storia Studio";
+        if (body.preferences?.defaultAspectRatio) {
+          demo.canvas.aspectRatio = body.preferences.defaultAspectRatio;
+          demo.exportSettings.aspectRatio = body.preferences.defaultAspectRatio;
+        }
+        if (body.preferences?.defaultResolution) {
+          demo.canvas.resolution = body.preferences.defaultResolution;
+          demo.exportSettings.resolution = body.preferences.defaultResolution;
+        }
+        if (body.preferences?.defaultFps) {
+          demo.canvas.fps = body.preferences.defaultFps;
+          demo.exportSettings.fps = body.preferences.defaultFps;
+        }
+        await storage.save(demo);
+        starterProjectId = demo.id;
+      }
+    }
+
+    const status = await onboardingManager.getStatus({ existingProjectCount: starterProjectId ? 1 : (await storage.list()).length });
+    return {
+      ok: true,
+      completed: state.completed,
+      restartRequired,
+      starterProjectId,
+      status,
+    };
+  });
+
+  app.post("/api/onboarding/skip", async (req, reply) => {
+    const admin = checkStrictLocalAdminRequest(req);
+    if (!admin.ok) {
+      return reply.status(403).send({ error: "local_admin_required", message: admin.reason });
+    }
+    const { state } = await onboardingManager.complete({ skipped: true });
+    return { ok: true, completed: state.completed };
+  });
+
+  app.post("/api/onboarding/reset", async (req, reply) => {
+    const admin = checkStrictLocalAdminRequest(req);
+    if (!admin.ok) {
+      return reply.status(403).send({ error: "local_admin_required", message: admin.reason });
+    }
+    await onboardingManager.reset();
+    return { ok: true, completed: false };
   });
 
   app.get("/api/projects", async () => {

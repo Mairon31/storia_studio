@@ -1,0 +1,320 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Storia Studio — Iniciando…</title>
+    <style>
+      :root {
+        --bg: #0b0c10;
+        --panel: rgba(20, 22, 32, 0.86);
+        --border: rgba(255, 255, 255, 0.11);
+        --pink: #f7c8d6;
+        --teal: #4ce6c8;
+        --danger: #ff6470;
+        --text: #f5f7fb;
+        --muted: #98a2b3;
+      }
+      * {
+        box-sizing: border-box;
+        margin: 0;
+        padding: 0;
+      }
+      html,
+      body {
+        height: 100%;
+        width: 100%;
+        background:
+          radial-gradient(circle at 22% 18%, rgba(247, 200, 214, 0.16), transparent 44%),
+          radial-gradient(circle at 82% 82%, rgba(76, 230, 200, 0.12), transparent 45%),
+          var(--bg);
+        color: var(--text);
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Inter, system-ui, sans-serif;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        user-select: none;
+      }
+      .card {
+        width: min(520px, 92vw);
+        background: var(--panel);
+        border: 1px solid var(--border);
+        border-radius: 22px;
+        padding: 28px;
+        backdrop-filter: blur(18px);
+        box-shadow: 0 24px 70px rgba(0, 0, 0, 0.55);
+        display: flex;
+        flex-direction: column;
+        gap: 18px;
+      }
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+      .badge {
+        width: 54px;
+        height: 54px;
+        border-radius: 14px;
+        overflow: hidden;
+        flex-shrink: 0;
+        border: 1px solid rgba(255, 255, 255, 0.14);
+        box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+      }
+      .badge svg {
+        width: 100%;
+        height: 100%;
+        display: block;
+      }
+      .title {
+        font-size: 20px;
+        font-weight: 800;
+        letter-spacing: -0.02em;
+      }
+      .subtitle {
+        font-size: 12px;
+        color: var(--muted);
+        margin-top: 2px;
+      }
+      .status-row {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        font-size: 13px;
+        padding: 12px 14px;
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.04);
+        border: 1px solid rgba(255, 255, 255, 0.08);
+      }
+      .spinner {
+        width: 16px;
+        height: 16px;
+        border-radius: 50%;
+        border: 2.5px solid rgba(247, 200, 214, 0.22);
+        border-top-color: var(--pink);
+        animation: spin 0.8s linear infinite;
+        flex-shrink: 0;
+      }
+      .spinner.error {
+        animation: none;
+        border-color: var(--danger);
+        background: var(--danger);
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+      .pills {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+      .pill {
+        padding: 10px 12px;
+        border-radius: 12px;
+        background: rgba(0, 0, 0, 0.28);
+        border: 1px solid var(--border);
+        font-size: 11.5px;
+      }
+      .pill-label {
+        color: var(--muted);
+        font-size: 10px;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+      }
+      .pill-value {
+        margin-top: 4px;
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 11px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      .ok {
+        color: var(--teal);
+      }
+      .warn {
+        color: #fbbf24;
+      }
+      .err-box {
+        display: none;
+        padding: 12px 14px;
+        border-radius: 12px;
+        background: rgba(255, 100, 112, 0.14);
+        border: 1px solid rgba(255, 100, 112, 0.36);
+        color: #fecaca;
+        font-size: 12px;
+        line-height: 1.5;
+      }
+      .actions {
+        display: none;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      button {
+        appearance: none;
+        border: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.07);
+        color: var(--text);
+        border-radius: 10px;
+        padding: 9px 14px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      button.primary {
+        background: var(--pink);
+        color: #101218;
+        border-color: transparent;
+      }
+      button:hover {
+        filter: brightness(1.08);
+      }
+      details {
+        font-size: 11px;
+        color: var(--muted);
+      }
+      summary {
+        cursor: pointer;
+      }
+      pre {
+        margin-top: 8px;
+        max-height: 140px;
+        overflow: auto;
+        padding: 10px;
+        border-radius: 10px;
+        background: rgba(0, 0, 0, 0.45);
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size: 10.5px;
+        color: #cbd5e1;
+        white-space: pre-wrap;
+        user-select: text;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="card">
+      <div class="brand">
+        <div class="badge" aria-hidden="true">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+            <rect x="0" y="0" width="512" height="512" rx="108" fill="#131416" />
+            <g transform="translate(106 106) scale(0.714286)">
+              <path d="M 150.4 0 H 420 V 151 L 366 120.8 V 68 A 14 14 0 0 0 352 54 H 246.8 Z" fill="#f4f5f6" />
+              <path d="M 150.4 420 H 420 V 224 A 58 58 0 0 0 390.3 173.4 L 95.3 8.2 A 64 64 0 0 0 0 64 V 356 A 64 64 0 0 0 95.3 411.8 L 338 275.9 Q 344 272.5 344 265.5 V 247 Q 344 240 338 236.5 L 322 227.5 Q 316 224.2 310 227.6 L 68.9 364.7 A 10 10 0 0 1 54 356 V 64 A 10 10 0 0 1 68.9 55.3 L 360 218.3 A 10 10 0 0 1 366 227.2 V 352 A 14 14 0 0 1 352 366 H 246.8 Z" fill="#f4f5f6" />
+              <path d="M 108 112 L 162 142.2 V 277.8 L 108 308 V 248 L 146 210 L 108 172 Z" fill="#f4f5f6" />
+              <polygon points="102,179 133,210 102,241 71,210" fill="#e9942f" />
+            </g>
+          </svg>
+        </div>
+        <div>
+          <div class="title">Storia Studio</div>
+          <div class="subtitle">Native Rust Desktop Launcher · 2D &amp; Retro NLE</div>
+        </div>
+      </div>
+
+      <div class="status-row">
+        <div id="spinner" class="spinner"></div>
+        <div id="statusText">Inicializando servidor local de Storia Studio…</div>
+      </div>
+
+      <div class="pills">
+        <div class="pill">
+          <div class="pill-label">Node.js Runtime</div>
+          <div id="nodeVal" class="pill-value">Detectando…</div>
+        </div>
+        <div class="pill">
+          <div class="pill-label">FFmpeg Encoder</div>
+          <div id="ffmpegVal" class="pill-value">Detectando…</div>
+        </div>
+      </div>
+
+      <div id="errorBox" class="err-box"></div>
+
+      <div id="actions" class="actions">
+        <button id="retryBtn" class="primary">Reintentar</button>
+        <button id="dataBtn">Abrir carpeta de proyectos</button>
+        <button id="nodeDownloadBtn">Descargar Node.js 22 LTS</button>
+      </div>
+
+      <details id="logsDetails">
+        <summary>Ver registro de arranque del servidor</summary>
+        <pre id="logsPre">Esperando salida…</pre>
+      </details>
+    </main>
+
+    <script>
+      const statusText = document.getElementById("statusText");
+      const spinner = document.getElementById("spinner");
+      const nodeVal = document.getElementById("nodeVal");
+      const ffmpegVal = document.getElementById("ffmpegVal");
+      const errorBox = document.getElementById("errorBox");
+      const actions = document.getElementById("actions");
+      const logsPre = document.getElementById("logsPre");
+      const logsDetails = document.getElementById("logsDetails");
+
+      function invokeTauri(cmd, args) {
+        if (window.__TAURI__ && window.__TAURI__.core && window.__TAURI__.core.invoke) {
+          return window.__TAURI__.core.invoke(cmd, args || {});
+        }
+        return Promise.reject(new Error("Tauri IPC no disponible"));
+      }
+
+      document.getElementById("retryBtn").addEventListener("click", () => {
+        spinner.classList.remove("error");
+        errorBox.style.display = "none";
+        invokeTauri("retry_boot").catch(() => {});
+      });
+
+      document.getElementById("dataBtn").addEventListener("click", () => {
+        invokeTauri("open_data_dir").catch(() => {});
+      });
+
+      document.getElementById("nodeDownloadBtn").addEventListener("click", () => {
+        invokeTauri("open_external_url", { url: "https://nodejs.org/en/download" }).catch(() => {});
+      });
+
+      async function poll() {
+        try {
+          const st = await invokeTauri("get_boot_state");
+          statusText.textContent = st.message || "Iniciando…";
+
+          if (st.node) {
+            nodeVal.textContent = st.node.found ? st.node.version || "Instalado" : "No detectado";
+            nodeVal.className = "pill-value " + (st.node.found ? "ok" : "warn");
+          }
+          if (st.ffmpeg) {
+            ffmpegVal.textContent = st.ffmpeg.found ? "Listo" : "Opcional (requerido para MP4)";
+            ffmpegVal.className = "pill-value " + (st.ffmpeg.found ? "ok" : "warn");
+          }
+          if (Array.isArray(st.logs) && st.logs.length > 0) {
+            logsPre.textContent = st.logs.join("\n");
+          }
+
+          if (st.phase === "error" || st.error) {
+            spinner.classList.add("error");
+            errorBox.textContent = st.error || st.message;
+            errorBox.style.display = "block";
+            actions.style.display = "flex";
+            logsDetails.open = true;
+          } else {
+            spinner.classList.remove("error");
+            errorBox.style.display = "none";
+            actions.style.display = "none";
+          }
+
+          if (st.ready && st.serverUrl) {
+            window.location.replace(st.serverUrl);
+            return;
+          }
+        } catch {
+          // Wait for Tauri runtime bridge
+        }
+        window.setTimeout(poll, 320);
+      }
+
+      poll();
+    </script>
+  </body>
+</html>

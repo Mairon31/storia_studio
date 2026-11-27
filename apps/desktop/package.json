@@ -1,0 +1,14 @@
+{
+  "name": "@storia/desktop",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Storia Studio — Native Cross-Platform Rust Desktop App (Tauri v2), Installer & Standalone Launcher for Windows, macOS, and Linux",
+  "type": "module",
+  "scripts": {
+    "desktop:icons": "node ../../scripts/generate-desktop-icons.mjs",
+    "desktop:bundle": "node ../../scripts/prepare-desktop-bundle.mjs",
+    "desktop:dev": "node ../../scripts/build-desktop.mjs --dev",
+    "desktop:build": "node ../../scripts/build-desktop.mjs",
+    "desktop:launcher": "node ../../scripts/build-desktop.mjs --launcher-only"
+  }
+}

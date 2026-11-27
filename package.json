@@ -20,7 +20,12 @@
     "start:mcp": "pnpm --filter @storia/mcp start",
     "seed:demo": "pnpm --filter @storia/server seed:demo",
     "export": "pnpm --filter @storia/server export --",
-    "doctor": "node scripts/doctor.mjs"
+    "doctor": "node scripts/doctor.mjs",
+    "desktop:icons": "node scripts/generate-desktop-icons.mjs",
+    "desktop:bundle": "node scripts/prepare-desktop-bundle.mjs",
+    "desktop:dev": "node scripts/build-desktop.mjs --dev",
+    "desktop:build": "node scripts/build-desktop.mjs",
+    "desktop:launcher": "node scripts/build-desktop.mjs --launcher-only"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
