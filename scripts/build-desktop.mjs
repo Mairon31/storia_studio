@@ -71,11 +71,34 @@ function printRustInstallHelp() {
   console.error("\nTambién puedes compilar los instaladores para Windows/macOS/Linux automáticamente con GitHub Actions (.github/workflows/release-desktop.yml).\n");
 }
 
+function assertAppNotRunningOnWindows() {
+  if (process.platform !== "win32" || isDev) return;
+  const targets = launcherOnly ? ["storia-launcher"] : ["storia-studio", "storia-launcher"];
+  for (const name of targets) {
+    const res = spawnSync("tasklist", ["/FI", `IMAGENAME eq ${name}.exe`, "/NH"], {
+      encoding: "utf8",
+      env: childEnv,
+    });
+    const out = (res.stdout || "").toLowerCase();
+    if (out.includes(`${name}.exe`)) {
+      console.error(
+        `\n[desktop:build] ${name}.exe está en ejecución y Windows bloquea la sobreescritura del binario.`,
+      );
+      console.error(
+        `Ciérralo desde la bandeja del sistema (clic derecho > Salir) o ejecuta:\n  Stop-Process -Name "${name}" -Force\n`,
+      );
+      process.exit(1);
+    }
+  }
+}
+
 function main() {
   if (!hasCommand("cargo")) {
     printRustInstallHelp();
     process.exit(1);
   }
+
+  assertAppNotRunningOnWindows();
 
   // 1. Ensure icons exist
   const requiredIcon = path.join(TAURI_DIR, "icons", "icon.ico");

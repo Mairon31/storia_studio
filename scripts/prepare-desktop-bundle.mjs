@@ -195,9 +195,13 @@ async function main() {
   await fs.rm(RUNTIME_OUT, { recursive: true, force: true, maxRetries: 6, retryDelay: 150 });
   await fs.mkdir(RUNTIME_OUT, { recursive: true });
 
-  // 1. Copy compiled dist outputs & manifests (excluding __tests__ and source maps)
-  const noTestsFilter = (fullPath, name) =>
-    name !== "__tests__" && !name.endsWith(".test.js") && !name.endsWith(".test.d.ts") && !name.endsWith(".map");
+  // 1. Copy compiled dist outputs & manifests (excluding __tests__, types, and source maps)
+  const noTestsFilter = (_fullPath, name) =>
+    name !== "__tests__" &&
+    !name.endsWith(".test.js") &&
+    !name.endsWith(".test.d.ts") &&
+    !name.endsWith(".d.ts") &&
+    !name.endsWith(".map");
 
   const workspaceParts = [
     { src: "packages/schema/dist", dst: "packages/schema/dist" },
@@ -253,13 +257,48 @@ async function main() {
     path.join(ROOT_DIR, "apps", "mcp"),
   ]);
 
-  const nmFilter = (_full, name) =>
-    name !== ".cache" &&
-    name !== "test" &&
-    name !== "tests" &&
-    name !== "__tests__" &&
-    name !== "node_modules" &&
-    !name.endsWith(".map");
+  const BLOCKED_NM_DIRS = new Set([
+    ".cache",
+    ".github",
+    ".husky",
+    ".vscode",
+    "test",
+    "tests",
+    "__tests__",
+    "spec",
+    "docs",
+    "doc",
+    "examples",
+    "example",
+    "benchmark",
+    "benchmarks",
+    "integration",
+    "node_modules",
+  ]);
+  const BLOCKED_NM_EXTS = [
+    ".map",
+    ".ps1",
+    ".psm1",
+    ".sh",
+    ".bash",
+    ".bat",
+    ".cmd",
+    ".vbs",
+    ".d.ts",
+    ".d.cts",
+    ".d.mts",
+    ".tst.ts",
+    ".test-d.ts",
+    ".markdown",
+  ];
+  const nmFilter = (_full, name) => {
+    const lower = name.toLowerCase();
+    if (BLOCKED_NM_DIRS.has(lower)) return false;
+    for (const ext of BLOCKED_NM_EXTS) {
+      if (lower.endsWith(ext)) return false;
+    }
+    return true;
+  };
 
   await runWithConcurrency(Array.from(topLevel.entries()), 12, async ([pkgName, srcDir]) => {
     const dstDir = path.join(runtimeNm, ...pkgName.split("/"));

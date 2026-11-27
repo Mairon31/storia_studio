@@ -28,6 +28,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "publisher": "Mairon Mayorga",
     "category": "Video",
     "copyright": "Copyright (c) 2026 Mairon Mayorga. All rights reserved.",
     "shortDescription": "Local-first 2D & Retro Video Editor (NLE) with WebGL2 and MCP",

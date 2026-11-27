@@ -486,115 +486,88 @@ pub fn check_server_health(port: u16) -> bool {
         && resp.contains("storia-studio-server")
 }
 
-/// Opens a native OS directory picker dialog without requiring extra Rust crate dependencies.
-pub fn pick_folder_dialog(title: Option<&str>) -> Result<Option<String>, String> {
-    let prompt = title
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .unwrap_or("Selecciona una carpeta para Storia Studio")
-        .replace('\'', " ")
-        .replace('"', " ");
-
-    #[cfg(target_os = "windows")]
-    {
-        let script = format!(
-            "Add-Type -AssemblyName System.Windows.Forms; \
-             $d = New-Object System.Windows.Forms.FolderBrowserDialog; \
-             $d.Description = '{}'; \
-             $d.UseDescriptionForTitle = $true; \
-             if ($d.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {{ [Console]::Out.Write($d.SelectedPath) }}",
-            prompt
-        );
-        let mut cmd = Command::new("powershell.exe");
-        cmd.args(["-NoProfile", "-STA", "-Command", &script])
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .creation_flags(CREATE_NO_WINDOW);
-        let output = cmd
-            .output()
-            .map_err(|e| format!("No se pudo abrir el selector de carpetas: {}", e))?;
-        let selected = String::from_utf8_lossy(&output.stdout).trim().to_string();
-        return Ok(if selected.is_empty() { None } else { Some(selected) });
-    }
-
-    #[cfg(target_os = "macos")]
-    {
-        let script = format!(
-            "POSIX path of (choose folder with prompt \"{}\")",
-            prompt
-        );
-        let output = Command::new("osascript")
-            .args(["-e", &script])
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .map_err(|e| format!("No se pudo abrir el selector de carpetas: {}", e))?;
-        if !output.status.success() {
-            return Ok(None);
-        }
-        let selected = String::from_utf8_lossy(&output.stdout)
-            .trim()
-            .trim_end_matches('/')
-            .to_string();
-        return Ok(if selected.is_empty() { None } else { Some(selected) });
-    }
-
-    #[cfg(all(unix, not(target_os = "macos")))]
-    {
-        for (bin, args) in [
-            ("zenity", vec!["--file-selection", "--directory", "--title", &prompt]),
-            ("kdialog", vec!["--getexistingdirectory", ".", "--title", &prompt]),
-        ] {
-            if let Ok(output) = Command::new(bin)
-                .args(&args)
-                .stdin(Stdio::null())
-                .stdout(Stdio::piped())
-                .stderr(Stdio::piped())
-                .output()
-            {
-                if output.status.success() {
-                    let selected = String::from_utf8_lossy(&output.stdout).trim().to_string();
-                    return Ok(if selected.is_empty() { None } else { Some(selected) });
-                }
-                return Ok(None);
-            }
-        }
-        Err("No se encontró zenity ni kdialog en el sistema. Escribe la ruta manualmente.".to_string())
-    }
+/// Opens a URL or local folder using the OS-native handler (`ShellExecuteW` on Windows,
+/// `open` on macOS, `xdg-open` on Linux) without spawning `cmd.exe` or PowerShell.
+pub fn open_in_system(target: &str) -> Result<(), String> {
+    open::that_detached(target).map_err(|e| format!("No se pudo abrir '{}': {}", target, e))
 }
 
-pub fn open_in_system(target: &str) -> Result<(), String> {
-    #[cfg(target_os = "windows")]
-    {
-        let mut cmd = Command::new("cmd");
-        cmd.args(["/C", "start", "", target])
-            .creation_flags(CREATE_NO_WINDOW);
-        cmd.spawn()
-            .map_err(|e| format!("No se pudo abrir '{}': {}", target, e))?;
-        return Ok(());
+#[cfg(target_os = "windows")]
+mod win_job {
+    use std::ffi::c_void;
+    use std::mem::{size_of, zeroed};
+    use std::os::windows::io::AsRawHandle;
+    use std::process::Child;
+    use std::ptr::null_mut;
+    use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
+    use windows_sys::Win32::System::JobObjects::{
+        AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+        SetInformationJobObject, TerminateJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+        JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
+    };
+
+    pub struct ChildJobObject {
+        handle: HANDLE,
     }
-    #[cfg(target_os = "macos")]
-    {
-        Command::new("open")
-            .arg(target)
-            .spawn()
-            .map_err(|e| format!("No se pudo abrir '{}': {}", target, e))?;
-        return Ok(());
+
+    // Kernel Job Object HANDLEs are safe to send/synchronize across threads.
+    unsafe impl Send for ChildJobObject {}
+    unsafe impl Sync for ChildJobObject {}
+
+    impl ChildJobObject {
+        pub fn attach(child: &Child) -> Option<Self> {
+            unsafe {
+                let job = CreateJobObjectW(null_mut(), null_mut());
+                if job.is_null() {
+                    return None;
+                }
+                let mut info: JOBOBJECT_EXTENDED_LIMIT_INFORMATION = zeroed();
+                info.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+                let ok_set = SetInformationJobObject(
+                    job,
+                    JobObjectExtendedLimitInformation,
+                    (&info as *const JOBOBJECT_EXTENDED_LIMIT_INFORMATION) as *const c_void,
+                    size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
+                );
+                if ok_set == 0 {
+                    CloseHandle(job);
+                    return None;
+                }
+                let proc_handle = child.as_raw_handle() as HANDLE;
+                let ok_assign = AssignProcessToJobObject(job, proc_handle);
+                if ok_assign == 0 {
+                    CloseHandle(job);
+                    return None;
+                }
+                Some(Self { handle: job })
+            }
+        }
+
+        pub fn terminate_and_close(self) {
+            unsafe {
+                TerminateJobObject(self.handle, 0);
+                CloseHandle(self.handle);
+            }
+            std::mem::forget(self);
+        }
     }
-    #[cfg(all(unix, not(target_os = "macos")))]
-    {
-        Command::new("xdg-open")
-            .arg(target)
-            .spawn()
-            .map_err(|e| format!("No se pudo abrir '{}': {}", target, e))?;
-        return Ok(());
+
+    impl Drop for ChildJobObject {
+        fn drop(&mut self) {
+            if !self.handle.is_null() {
+                unsafe {
+                    CloseHandle(self.handle);
+                }
+                self.handle = null_mut();
+            }
+        }
     }
 }
 
 pub struct ServerSupervisor {
     child: Mutex<Option<Child>>,
+    #[cfg(target_os = "windows")]
+    job: Mutex<Option<win_job::ChildJobObject>>,
     logs: Arc<Mutex<VecDeque<String>>>,
 }
 
@@ -608,6 +581,8 @@ impl ServerSupervisor {
     pub fn new() -> Self {
         Self {
             child: Mutex::new(None),
+            #[cfg(target_os = "windows")]
+            job: Mutex::new(None),
             logs: Arc::new(Mutex::new(VecDeque::with_capacity(MAX_LOG_LINES))),
         }
     }
@@ -679,6 +654,14 @@ impl ServerSupervisor {
             .spawn()
             .map_err(|e| format!("No se pudo iniciar Node.js ({}): {}", node_bin, e))?;
 
+        #[cfg(target_os = "windows")]
+        {
+            let attached = win_job::ChildJobObject::attach(&child);
+            if let Ok(mut jg) = self.job.lock() {
+                *jg = attached;
+            }
+        }
+
         let logs_out = Arc::clone(&self.logs);
         if let Some(stdout) = child.stdout.take() {
             thread::spawn(move || {
@@ -741,19 +724,14 @@ impl ServerSupervisor {
     }
 
     pub fn stop(&self) {
+        #[cfg(target_os = "windows")]
+        {
+            if let Some(job) = self.job.lock().ok().and_then(|mut g| g.take()) {
+                job.terminate_and_close();
+            }
+        }
         let child_opt = self.child.lock().ok().and_then(|mut g| g.take());
         if let Some(mut child) = child_opt {
-            #[cfg(target_os = "windows")]
-            {
-                let pid = child.id();
-                let mut tk = Command::new("taskkill");
-                tk.args(["/PID", &pid.to_string(), "/T", "/F"])
-                    .stdin(Stdio::null())
-                    .stdout(Stdio::null())
-                    .stderr(Stdio::null())
-                    .creation_flags(CREATE_NO_WINDOW);
-                let _ = tk.status();
-            }
             let _ = child.kill();
             let _ = child.wait();
         }

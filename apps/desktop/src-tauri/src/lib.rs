@@ -1,17 +1,18 @@
 pub mod runtime;
 
 use runtime::{
-    current_platform_label, local_server_url, open_in_system, pick_folder_dialog, probe_ffmpeg,
+    current_platform_label, local_server_url, normalize_host_path, open_in_system, probe_ffmpeg,
     probe_node, read_bind_config, resolve_storia_paths, BootSnapshot, ServerSupervisor, ToolProbe,
     DEFAULT_PORT, LOOPBACK_ADDR,
 };
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::Duration;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, RunEvent, State, Url};
+use tauri_plugin_dialog::DialogExt;
 
 struct DesktopAppState {
     supervisor: Arc<ServerSupervisor>,
@@ -207,8 +208,23 @@ fn open_external_url(url: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-fn pick_folder(title: Option<String>) -> Result<Option<String>, String> {
-    pick_folder_dialog(title.as_deref())
+async fn pick_folder(app: AppHandle, title: Option<String>) -> Result<Option<String>, String> {
+    let (tx, rx) = mpsc::channel();
+    let mut builder = app.dialog().file();
+    if let Some(t) = title.as_deref().map(str::trim).filter(|s| !s.is_empty()) {
+        builder = builder.set_title(t);
+    }
+    builder.pick_folder(move |folder_path| {
+        let resolved = folder_path.and_then(|fp| {
+            fp.into_path()
+                .ok()
+                .map(|p| normalize_host_path(p).to_string_lossy().to_string())
+        });
+        let _ = tx.send(resolved);
+    });
+    tauri::async_runtime::spawn_blocking(move || rx.recv().ok().flatten())
+        .await
+        .map_err(|e| format!("No se pudo abrir el selector de carpetas: {}", e))
 }
 
 fn focus_main_window(app: &AppHandle) {
@@ -225,6 +241,7 @@ pub fn run() {
     let supervisor_for_exit = Arc::clone(&supervisor);
 
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .invoke_handler(tauri::generate_handler![
             get_boot_state,
