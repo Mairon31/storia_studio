@@ -250,7 +250,7 @@ async function main() {
     path.join(RUNTIME_OUT, "build-info.json"),
     JSON.stringify(
       {
-        version: rootPkg.version || "0.2.0",
+        version: rootPkg.version || "0.2.1",
         channel: buildChannel,
         commitSha,
         commitShort,

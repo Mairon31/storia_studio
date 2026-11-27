@@ -5,6 +5,9 @@ interface DecodedAudioEntry {
   peaks: number[];
 }
 
+const MIN_FADE_SEC = 0.005;
+const LINEAR_FALLBACK_MAX_SEC = 0.06;
+
 function evalFadeFactor(progress: number, curve: AudioFadeCurve): number {
   const p = Math.max(0, Math.min(1, progress));
   switch (curve) {
@@ -51,6 +54,7 @@ class StudioAudioEngine {
   private cache = new Map<string, DecodedAudioEntry>();
   private loading = new Map<string, Promise<DecodedAudioEntry | null>>();
   private activeNodes: AudioBufferSourceNode[] = [];
+  private playbackSessionId = 0;
 
   private ensureContext(): AudioContext | null {
     if (typeof window === "undefined") return null;
@@ -59,9 +63,6 @@ class StudioAudioEngine {
         window.AudioContext ||
         (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       if (AudioCtx) this.ctx = new AudioCtx();
-    }
-    if (this.ctx && this.ctx.state === "suspended") {
-      void this.ctx.resume();
     }
     return this.ctx;
   }
@@ -104,6 +105,7 @@ class StudioAudioEngine {
   }
 
   stopAll(): void {
+    this.playbackSessionId++;
     for (const node of this.activeNodes) {
       try {
         node.stop();
@@ -129,61 +131,75 @@ class StudioAudioEngine {
     const fadeOut = Math.min(Math.max(0, clip.fadeOut ?? 0), clip.duration * 0.95);
     const fadeOutStart = Math.max(fadeIn, clip.duration - fadeOut);
 
-    // Compute initial gain at offsetInClip
+    const remFadeIn =
+      fadeIn >= MIN_FADE_SEC && offsetInClip < fadeIn
+        ? Math.min(fadeIn - offsetInClip, remainingDur)
+        : 0;
+    const applyFadeIn = remFadeIn >= MIN_FADE_SEC;
+
+    // Only attenuate initial gain when a fade-in ramp is actually scheduled; otherwise start at full targetGain
     let initFactor = 1;
-    if (fadeIn > 0.01 && offsetInClip < fadeIn) {
+    if (applyFadeIn) {
       initFactor *= evalFadeFactor(offsetInClip / fadeIn, curve);
     }
-    if (fadeOut > 0.01 && offsetInClip > fadeOutStart) {
+    if (fadeOut >= MIN_FADE_SEC && offsetInClip > fadeOutStart) {
       initFactor *= 1 - evalFadeFactor((offsetInClip - fadeOutStart) / fadeOut, curve);
     }
 
-    try {
-      gainParam.setValueAtTime(Math.max(0.0001, safeTarget * initFactor), playStartCtxTime);
+    const initGain = Math.max(0.0001, safeTarget * initFactor);
 
-      // Schedule remaining fade-in segment
+    try {
+      gainParam.setValueAtTime(initGain, playStartCtxTime);
+
       let fadeInEndCtxTime = playStartCtxTime;
-      if (fadeIn > 0.01 && offsetInClip < fadeIn) {
-        const remFadeIn = Math.min(fadeIn - offsetInClip, remainingDur);
-        if (remFadeIn > 0.015) {
-          const startProg = offsetInClip / fadeIn;
-          const endProg = Math.min(1, (offsetInClip + remFadeIn) / fadeIn);
-          fadeInEndCtxTime = playStartCtxTime + remFadeIn;
-          if (curve === "linear") {
-            gainParam.linearRampToValueAtTime(safeTarget * endProg, fadeInEndCtxTime);
-          } else {
-            const vals = buildFadeCurveArray(0.0001, safeTarget, curve, true, startProg, endProg);
-            gainParam.setValueCurveAtTime(vals, playStartCtxTime + 0.001, Math.max(0.01, remFadeIn - 0.002));
-          }
+      if (applyFadeIn) {
+        const startProg = offsetInClip / fadeIn;
+        const endProg = Math.min(1, (offsetInClip + remFadeIn) / fadeIn);
+        const endGain = Math.max(0.0001, safeTarget * evalFadeFactor(endProg, curve));
+        fadeInEndCtxTime = playStartCtxTime + remFadeIn;
+
+        if (curve === "linear" || remFadeIn <= LINEAR_FALLBACK_MAX_SEC) {
+          gainParam.linearRampToValueAtTime(endGain, fadeInEndCtxTime);
+        } else {
+          const vals = buildFadeCurveArray(0.0001, safeTarget, curve, true, startProg, endProg);
+          vals[0] = initGain;
+          vals[vals.length - 1] = endGain;
+          gainParam.setValueCurveAtTime(vals, playStartCtxTime + 0.0005, Math.max(MIN_FADE_SEC, remFadeIn - 0.001));
+        }
+
+        if (endProg >= 0.999) {
+          gainParam.setValueAtTime(safeTarget, fadeInEndCtxTime + 0.001);
         }
       }
 
-      // Schedule fade-out segment (strictly non-overlapping for Safari WebKit AudioParam compliance)
-      if (fadeOut > 0.01) {
+      // Schedule fade-out segment strictly after fade-in finishes
+      if (fadeOut >= MIN_FADE_SEC) {
         const fadeOutRelStart = Math.max(0, fadeOutStart - offsetInClip);
-        const fadeOutCtxStart = Math.max(fadeInEndCtxTime + 0.004, playStartCtxTime + fadeOutRelStart);
+        const fadeOutCtxStart = Math.max(fadeInEndCtxTime + 0.003, playStartCtxTime + fadeOutRelStart);
         const clipEndCtxTime = playStartCtxTime + remainingDur;
         const fadeOutDur = clipEndCtxTime - fadeOutCtxStart;
-        if (fadeOutDur > 0.015) {
+        if (fadeOutDur >= MIN_FADE_SEC) {
           const startProg = Math.max(0, Math.min(0.95, (offsetInClip - fadeOutStart) / fadeOut));
-          if (fadeOutCtxStart > fadeInEndCtxTime + 0.006 && offsetInClip + fadeOutRelStart >= fadeIn) {
-            gainParam.setValueAtTime(safeTarget, fadeOutCtxStart - 0.002);
+          const fadeOutStartGain = Math.max(0.0001, safeTarget * (1 - evalFadeFactor(startProg, curve)));
+          if (fadeOutCtxStart > fadeInEndCtxTime + 0.004) {
+            gainParam.setValueAtTime(fadeOutStartGain, fadeOutCtxStart);
           }
-          if (curve === "linear") {
+          if (curve === "linear" || fadeOutDur <= LINEAR_FALLBACK_MAX_SEC) {
             gainParam.linearRampToValueAtTime(0.0001, fadeOutCtxStart + fadeOutDur);
           } else {
             const vals = buildFadeCurveArray(safeTarget, 0.0001, curve, false, startProg, 1);
-            gainParam.setValueCurveAtTime(vals, fadeOutCtxStart, Math.max(0.01, fadeOutDur));
+            vals[0] = fadeOutStartGain;
+            gainParam.setValueCurveAtTime(vals, fadeOutCtxStart + 0.0005, Math.max(MIN_FADE_SEC, fadeOutDur - 0.001));
           }
         }
       }
     } catch {
-      // Fallback safely on strict WebKit AudioParam overlap checks
+      // Safe fallback so no clip can ever get stuck at 0.0001 (-80 dB)
       try {
         gainParam.cancelScheduledValues(playStartCtxTime);
         gainParam.setValueAtTime(safeTarget, playStartCtxTime);
       } catch {
-        // Ignore
+        gainParam.value = safeTarget;
       }
     }
   }
@@ -194,22 +210,34 @@ class StudioAudioEngine {
     fromTimeSec: number,
   ): Promise<void> {
     this.stopAll();
+    const sessionId = this.playbackSessionId;
     const ctx = this.ensureContext();
     if (!ctx) return;
+
+    const wallStart = performance.now();
+
+    // Wait for suspended AudioContext to unlock on Windows WebView2 / Chromium before reading ctx.currentTime
+    if (ctx.state === "suspended") {
+      try {
+        await ctx.resume();
+      } catch {
+        // Continue best-effort if resume fails
+      }
+    }
+    if (sessionId !== this.playbackSessionId) return;
 
     const assetMap = new Map(assets.map((a) => [a.id, a]));
     const trackMap = new Map(tracks.map((t) => [t.id, t]));
     const anySolo = tracks.some((t) => t.solo);
 
-    // Pre-decode all active clips first so they all start tightly synchronized on the same clock tick
-    interface ScheduledItem {
+    interface PendingItem {
       track: AudioTrack;
       clip: AudioClip;
-      entry: DecodedAudioEntry;
+      asset: Asset;
       duckFactor: number;
     }
 
-    const items: ScheduledItem[] = [];
+    const pending: PendingItem[] = [];
     for (const track of tracks) {
       if (track.muted) continue;
       if (anySolo && !track.solo) continue;
@@ -223,15 +251,30 @@ class StudioAudioEngine {
         if (clipEnd <= fromTimeSec) continue;
         const asset = assetMap.get(clip.assetId);
         if (!asset) continue;
-        const entry = await this.loadAssetAudio(asset);
-        if (!entry) continue;
-        items.push({ track, clip, entry, duckFactor });
+        pending.push({ track, clip, asset, duckFactor });
       }
     }
 
-    const now = ctx.currentTime + 0.02;
+    // Decode all needed audio assets in parallel so multi-clip narration stays tightly synchronized
+    const decoded = await Promise.all(
+      pending.map(async (item) => ({
+        ...item,
+        entry: await this.loadAssetAudio(item.asset),
+      })),
+    );
+    if (sessionId !== this.playbackSessionId) return;
 
-    for (const { track, clip, entry, duckFactor } of items) {
+    // Compensate for any wall-clock elapsed during async resume/decode so audio matches the rAF playhead
+    const decodeElapsedSec = Math.max(0, (performance.now() - wallStart) / 1000);
+    const effectiveFromTimeSec = fromTimeSec + decodeElapsedSec;
+
+    const now = ctx.currentTime + 0.015;
+
+    for (const { track, clip, entry, duckFactor } of decoded) {
+      if (!entry) continue;
+      const clipEnd = clip.start + clip.duration;
+      if (clipEnd <= effectiveFromTimeSec) continue;
+
       const source = ctx.createBufferSource();
       source.buffer = entry.buffer;
       source.loop = clip.loop;
@@ -250,8 +293,8 @@ class StudioAudioEngine {
         gainNode.connect(ctx.destination);
       }
 
-      const startDelay = Math.max(0, clip.start - fromTimeSec);
-      const offsetInClip = Math.max(0, fromTimeSec - clip.start);
+      const startDelay = Math.max(0, clip.start - effectiveFromTimeSec);
+      const offsetInClip = Math.max(0, effectiveFromTimeSec - clip.start);
       const remainingDur = Math.max(0.01, clip.duration - offsetInClip);
       const bufferOffset = clip.trimStart + offsetInClip;
 

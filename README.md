@@ -16,7 +16,7 @@
 </p>
 
 <p>
-  <img src="docs/assets/badge-version.svg" alt="v0.2.0" />
+  <img src="docs/assets/badge-version.svg" alt="v0.2.1" />
   <img src="docs/assets/badge-platforms.svg" alt="Windows · macOS · Linux" />
   <img src="docs/assets/badge-engine.svg" alt="WebGL2 · Rust Tauri v2" />
   <a href="https://discord.gg/ahJM3hyFWr">

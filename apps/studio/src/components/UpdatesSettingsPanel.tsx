@@ -207,7 +207,7 @@ export const UpdatesSettingsPanel: React.FC = () => {
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <span className="text-[14px] font-extrabold font-mono-code">
-              v{current?.version ?? "0.2.0"}
+              v{current?.version ?? "0.2.1"}
             </span>
             <span
               className="text-[9.5px] font-mono-code px-2 py-0.5 rounded-full font-semibold uppercase"

@@ -1,6 +1,6 @@
 {
   "name": "@storia/desktop",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Storia Studio — Native Cross-Platform Rust Desktop App (Tauri v2), Installer & Standalone Launcher for Windows, macOS, and Linux",
   "type": "module",

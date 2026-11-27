@@ -1,6 +1,6 @@
 {
   "name": "storia-studio",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "private": true,
   "description": "Storia Studio — Local 2D/Retro NLE Video Production Studio with WebGL2 Live Preview, FFmpeg NVENC Export, and Live MCP Control",
   "type": "module",

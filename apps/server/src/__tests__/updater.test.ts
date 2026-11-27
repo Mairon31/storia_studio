@@ -230,4 +230,64 @@ describe("@storia/server — Stable & Nightly Auto-Updater (Channels, Commit Che
     });
     expect(mcpBlocked.statusCode).toBe(403);
   });
+
+  it("does NOT report an update when already on the latest nightly commit even if publishedAt is later than builtAt", async () => {
+    const nightlyTmp = await fs.mkdtemp(path.join(os.tmpdir(), "storia-updater-same-nightly-"));
+    const buildInfoPath = path.join(nightlyTmp, "build-info.json");
+    await fs.writeFile(
+      buildInfoPath,
+      JSON.stringify({
+        version: "0.2.1",
+        channel: "nightly",
+        commitSha: remoteNightlySha,
+        commitShort: "2222222",
+        commitMessage: "latest nightly commit",
+        // Built 20 minutes before publish-nightly-release finishes in CI
+        builtAt: "2026-11-27T13:40:00.000Z",
+        repo: REPO_SLUG,
+      }),
+      "utf8",
+    );
+
+    const sameCommitApp = await buildServer({
+      projectsDir: path.join(nightlyTmp, "projects"),
+      modelsDir: path.join(nightlyTmp, "models"),
+      ttsModelsDir: path.join(nightlyTmp, "models", "tts"),
+      connectivityConfigPath: path.join(nightlyTmp, "models", "config", "connectivity.json"),
+      librariesConfigPath: path.join(nightlyTmp, "models", "config", "libraries.json"),
+      oauthStorePath: path.join(nightlyTmp, "models", "config", "mcp-oauth.json"),
+      onboardingConfigPath: path.join(nightlyTmp, "models", "config", "onboarding.json"),
+      updatesConfigPath: path.join(nightlyTmp, "models", "config", "updates.json"),
+      updatesDir: path.join(nightlyTmp, "models", "updates"),
+      buildInfoPath,
+      updateFetchImpl: async () =>
+        new Response(
+          JSON.stringify({
+            channel: "nightly",
+            tag: "nightly",
+            version: "0.2.1-nightly.2222222",
+            commitSha: remoteNightlySha,
+            commitShort: "2222222",
+            commitMessage: "latest nightly commit",
+            publishedAt: "2026-11-27T14:00:00.000Z",
+            releaseUrl: `${GH_BASE}/releases/tag/nightly`,
+            notes: "Nightly build",
+            assets: {},
+          }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        ),
+      isDesktopApp: true,
+      logger: false,
+    });
+
+    try {
+      const checkRes = await sameCommitApp.inject({ method: "POST", url: "/api/updates/check", payload: {} });
+      expect(checkRes.statusCode).toBe(200);
+      expect(checkRes.json().result.channel).toBe("nightly");
+      expect(checkRes.json().result.updateAvailable).toBe(false);
+    } finally {
+      await sameCommitApp.close();
+      await fs.rm(nightlyTmp, { recursive: true, force: true });
+    }
+  });
 });

@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from "react";
 import {
   AudioLines,
+  Award,
   Bot,
   Captions,
   Cloud,
@@ -32,6 +33,7 @@ import {
 import { StorageStatsResponse, studioApi } from "../lib/api";
 import { useStudioStore } from "../store/useStudioStore";
 import { ConnectivitySettingsPanel } from "./ConnectivitySettingsPanel";
+import { CreditsSettingsPanel } from "./CreditsSettingsPanel";
 import { LibrariesSettingsPanel } from "./LibrariesSettingsPanel";
 import { ProvidersSettingsPanel } from "./ProvidersSettingsPanel";
 import { UpdatesSettingsPanel } from "./UpdatesSettingsPanel";
@@ -54,7 +56,8 @@ type SettingsSection =
   | "hardware"
   | "system"
   | "updates"
-  | "about";
+  | "about"
+  | "credits";
 
 interface NavGroup {
   group: string;
@@ -98,6 +101,7 @@ const NAV_GROUPS: NavGroup[] = [
       { id: "system", label: "Sistema", icon: <Server size={13} /> },
       { id: "updates", label: "Actualizaciones", icon: <Download size={13} /> },
       { id: "about", label: "Sobre nosotros", icon: <Info size={13} /> },
+      { id: "credits", label: "Créditos", icon: <Award size={13} /> },
     ],
   },
 ];
@@ -1456,7 +1460,7 @@ export const AppSettingsModal: React.FC = () => {
                           className="text-[10px] font-mono-code px-2 py-0.5 rounded-full"
                           style={{ background: "var(--glass-active)", color: "var(--accent-primary)" }}
                         >
-                          v0.2.0
+                          v0.2.1
                         </span>
                       </h3>
                       <div className="text-[11px]" style={{ color: "var(--text-muted)" }}>
@@ -1555,6 +1559,11 @@ export const AppSettingsModal: React.FC = () => {
                 </div>
               </>
             )}
+
+            {/* ============================================================= */}
+            {/* 18. CRÉDITOS Y ATRIBUCIONES                                   */}
+            {/* ============================================================= */}
+            {section === "credits" && <CreditsSettingsPanel />}
           </div>
         </div>
       </div>

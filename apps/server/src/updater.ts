@@ -196,7 +196,7 @@ function parseGithubApiRelease(
   const commitShort = commitSha ? commitSha.slice(0, 7) : "";
 
   const versionMatch = tag.match(/v?(\d+\.\d+\.\d+)/) ?? name.match(/v?(\d+\.\d+\.\d+)/);
-  const baseVer = versionMatch?.[1] ?? "0.2.0";
+  const baseVer = versionMatch?.[1] ?? "0.2.1";
   const version = channel === "nightly" && commitShort ? `${baseVer}-nightly.${commitShort}` : baseVer;
 
   const assets: Record<string, RemotePlatformAsset> = {};
@@ -274,7 +274,7 @@ export class UpdateManager {
   async getInstalledBuildInfo(): Promise<InstalledBuildInfo> {
     if (this.buildInfoCache) return { ...this.buildInfoCache };
 
-    let version = "0.2.0";
+    let version = "0.2.1";
     let channel: UpdateChannel =
       process.env.STORIA_BUILD_CHANNEL === "nightly" ? "nightly" : "stable";
     let commitSha = (process.env.STORIA_BUILD_COMMIT ?? "").trim();
@@ -443,23 +443,33 @@ export class UpdateManager {
       let reason = "Ya tienes la versión más reciente instalada.";
 
       if (channel === "nightly") {
+        const baseCmp = compareSemver(manifest.version, current.version);
         if (switchingChannel) {
           updateAvailable = true;
           reason = `Cambiarás del canal Estable al último build Nightly (${manifest.commitShort || manifest.version}).`;
-        } else if (
-          manifest.commitSha &&
-          current.commitSha &&
-          manifest.commitSha.toLowerCase() !== current.commitSha.toLowerCase()
-        ) {
-          updateAvailable = true;
-          reason = `Hay un nuevo commit en master (${manifest.commitShort}) más reciente que tu instalación actual (${current.commitShort}).`;
-        } else if (
-          !current.commitSha &&
-          manifest.commitSha
-        ) {
+        } else if (baseCmp < 0) {
+          updateAvailable = false;
+          reason = `Tu versión actual (v${current.version}) es más reciente que el último build Nightly publicado (v${manifest.version}).`;
+        } else if (manifest.commitSha && current.commitSha) {
+          const remoteSha = manifest.commitSha.trim().toLowerCase();
+          const localSha = current.commitSha.trim().toLowerCase();
+          const sameCommit =
+            remoteSha === localSha ||
+            (remoteSha.length >= 7 &&
+              localSha.length >= 7 &&
+              (remoteSha.startsWith(localSha) || localSha.startsWith(remoteSha)));
+          if (sameCommit) {
+            updateAvailable = false;
+            reason = `Ya tienes la compilación Nightly más reciente instalada (${current.commitShort}).`;
+          } else {
+            updateAvailable = true;
+            reason = `Hay un nuevo commit en master (${manifest.commitShort}) más reciente que tu instalación actual (${current.commitShort}).`;
+          }
+        } else if (!current.commitSha && manifest.commitSha) {
           updateAvailable = true;
           reason = `Nueva compilación Nightly disponible (${manifest.commitShort}).`;
         } else if (
+          !manifest.commitSha &&
           current.builtAt &&
           manifest.publishedAt &&
           Date.parse(manifest.publishedAt) > Date.parse(current.builtAt) + 60_000
@@ -475,6 +485,9 @@ export class UpdateManager {
         } else if (cmp > 0) {
           updateAvailable = true;
           reason = `Nueva versión estable disponible: v${manifest.version} (actual: v${current.version}).`;
+        } else {
+          updateAvailable = false;
+          reason = `Ya tienes la versión estable más reciente instalada (v${current.version}).`;
         }
       }
 

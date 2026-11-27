@@ -93,7 +93,7 @@ async function main() {
   const repo = (args.repo || process.env.GITHUB_REPOSITORY || "Mairon31/storia_studio").trim();
 
   const rootPkg = JSON.parse(await fs.readFile(path.join(ROOT_DIR, "package.json"), "utf8"));
-  const baseVersion = rootPkg.version || "0.2.0";
+  const baseVersion = rootPkg.version || "0.2.1";
   const commitSha = (args.commit || process.env.GITHUB_SHA || safeGit(["rev-parse", "HEAD"]) || "").trim();
   const commitShort = commitSha ? commitSha.slice(0, 7) : "dev";
   const commitMessage = (args.message || process.env.STORIA_COMMIT_MESSAGE || safeGit(["log", "-1", "--pretty=%s"]) || "").trim();

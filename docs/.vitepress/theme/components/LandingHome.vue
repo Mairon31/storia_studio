@@ -104,7 +104,7 @@ const guides = [
     <section class="st-hero">
       <div class="st-container">
         <div class="st-meta-row">
-          <span class="st-pill">v0.2.0</span>
+          <span class="st-pill">v0.2.1</span>
           <span class="st-meta-sep" aria-hidden="true">/</span>
           <span class="st-meta-text">Windows · macOS · Linux · Local-First</span>
         </div>

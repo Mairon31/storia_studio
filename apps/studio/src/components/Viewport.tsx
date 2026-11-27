@@ -266,8 +266,13 @@ export const Viewport: React.FC<ViewportProps> = ({
     setBounds([...r.getLayerBounds()]);
   }, [project, currentTime, dims.width, dims.height, rendererReady, assetTick, maxShortSide]);
 
-  // Preload textures & fonts when project assets change
+  // Preload textures, fonts & audio buffers when project assets change
   useEffect(() => {
+    for (const asset of project.assets) {
+      if (asset.kind === "audio") {
+        void audioEngine.loadAssetAudio(asset);
+      }
+    }
     const r = rendererRef.current;
     if (!r || !rendererReady) return;
     void r.ready(project, currentTime).then(() => {
