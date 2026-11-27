@@ -120,7 +120,7 @@ export interface AppSettings {
   hardwareAcceleration: boolean;
   maxParallelWorkers: number;
   logVerbosity: "minimal" | "normal" | "verbose";
-  updateChannel: "stable" | "beta";
+  updateChannel: "stable" | "nightly";
   autoCheckUpdates: boolean;
 }
 
@@ -187,7 +187,11 @@ function loadSavedAppSettings(): AppSettings {
     if (typeof window === "undefined") return DEFAULT_APP_SETTINGS;
     const raw = window.localStorage.getItem("storia_studio_app_settings_v1");
     if (!raw) return DEFAULT_APP_SETTINGS;
-    return { ...DEFAULT_APP_SETTINGS, ...(JSON.parse(raw) as Partial<AppSettings>) };
+    const parsed = JSON.parse(raw) as Record<string, unknown>;
+    const rawChannel = typeof parsed.updateChannel === "string" ? parsed.updateChannel : "";
+    const normalizedChannel: "stable" | "nightly" =
+      rawChannel === "nightly" || rawChannel === "beta" ? "nightly" : "stable";
+    return { ...DEFAULT_APP_SETTINGS, ...(parsed as Partial<AppSettings>), updateChannel: normalizedChannel };
   } catch {
     return DEFAULT_APP_SETTINGS;
   }

@@ -635,6 +635,9 @@ impl ServerSupervisor {
             .env("STORIA_BOOTSTRAP_CONFIG", &paths.bootstrap_config_path)
             .env("STORIA_SERVER_HOST", &bind.host)
             .env("STORIA_SERVER_PORT", bind.port.to_string())
+            .env("STORIA_BUILD_CHANNEL", env!("STORIA_BUILD_CHANNEL"))
+            .env("STORIA_BUILD_COMMIT", env!("STORIA_BUILD_COMMIT"))
+            .env("STORIA_UPDATE_REPO", env!("STORIA_UPDATE_REPO"))
             .env("NODE_ENV", "production")
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -736,6 +739,95 @@ impl ServerSupervisor {
             let _ = child.wait();
         }
     }
+}
+
+/// Launches a verified downloaded update installer and signals whether the desktop app should
+/// exit immediately so the installer can replace binaries and relaunch Storia Studio cleanly.
+pub fn launch_verified_update_installer(installer_path: &Path, updates_dir: &Path) -> Result<bool, String> {
+    let canonical_updates = normalize_host_path(
+        fs::canonicalize(updates_dir).unwrap_or_else(|_| updates_dir.to_path_buf()),
+    );
+    let canonical_installer = normalize_host_path(
+        fs::canonicalize(installer_path)
+            .map_err(|_| "El archivo de actualización descargado no existe.".to_string())?,
+    );
+
+    if !canonical_installer.starts_with(&canonical_updates) || !canonical_installer.is_file() {
+        return Err("Ruta de instalador fuera de la carpeta autorizada de actualizaciones.".to_string());
+    }
+
+    let ext = canonical_installer
+        .extension()
+        .and_then(|e| e.to_str())
+        .map(|s| s.to_lowercase())
+        .unwrap_or_default();
+
+    #[cfg(target_os = "windows")]
+    {
+        if ext == "exe" {
+            // Tauri NSIS native flags:
+            //   /P      -> Passive mode (progress bar only, zero clicks)
+            //   /UPDATE -> Update in-place preserving shortcuts & settings
+            //   /R      -> Automatically relaunch storia-studio.exe upon completion
+            Command::new(&canonical_installer)
+                .args(["/P", "/UPDATE", "/R"])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .map_err(|e| format!("No se pudo ejecutar el actualizador: {}", e))?;
+            return Ok(true);
+        }
+        if ext == "msi" {
+            Command::new("msiexec.exe")
+                .args(["/i", &canonical_installer.to_string_lossy(), "/qb"])
+                .stdin(Stdio::null())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .map_err(|e| format!("No se pudo ejecutar el instalador MSI: {}", e))?;
+            return Ok(true);
+        }
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        if ext == "appimage" {
+            use std::os::unix::fs::PermissionsExt;
+            if let Ok(meta) = fs::metadata(&canonical_installer) {
+                let mut perms = meta.permissions();
+                perms.set_mode(0o755);
+                let _ = fs::set_permissions(&canonical_installer, perms);
+            }
+            if let Ok(current_appimage) = env::var("APPIMAGE") {
+                let target = PathBuf::from(current_appimage.trim());
+                if target.is_file() {
+                    let backup = target.with_extension("AppImage.old");
+                    let _ = fs::rename(&target, &backup);
+                    if fs::copy(&canonical_installer, &target).is_ok() {
+                        if let Ok(meta) = fs::metadata(&target) {
+                            let mut perms = meta.permissions();
+                            perms.set_mode(0o755);
+                            let _ = fs::set_permissions(&target, perms);
+                        }
+                        let _ = fs::remove_file(&backup);
+                        let _ = Command::new(&target)
+                            .stdin(Stdio::null())
+                            .stdout(Stdio::null())
+                            .stderr(Stdio::null())
+                            .spawn();
+                        return Ok(true);
+                    } else {
+                        let _ = fs::rename(&backup, &target);
+                    }
+                }
+            }
+        }
+    }
+
+    // macOS (.dmg) or non-AppImage Linux (.deb/.rpm): open installer via native OS handler
+    open_in_system(&canonical_installer.to_string_lossy())?;
+    Ok(false)
 }
 
 impl Drop for ServerSupervisor {

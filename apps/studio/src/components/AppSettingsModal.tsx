@@ -33,6 +33,7 @@ import { useStudioStore } from "../store/useStudioStore";
 import { ConnectivitySettingsPanel } from "./ConnectivitySettingsPanel";
 import { LibrariesSettingsPanel } from "./LibrariesSettingsPanel";
 import { ProvidersSettingsPanel } from "./ProvidersSettingsPanel";
+import { UpdatesSettingsPanel } from "./UpdatesSettingsPanel";
 
 type SettingsSection =
   | "render"
@@ -170,8 +171,6 @@ export const AppSettingsModal: React.FC = () => {
   const [storageStats, setStorageStats] = useState<StorageStatsResponse | null>(null);
   const [loadingStorage, setLoadingStorage] = useState(false);
   const [clearingCache, setClearingCache] = useState(false);
-  const [checkingUpdates, setCheckingUpdates] = useState(false);
-  const [updateCheckMsg, setUpdateCheckMsg] = useState<string | null>(null);
 
   const loadStorageStats = async () => {
     setLoadingStorage(true);
@@ -203,17 +202,6 @@ export const AppSettingsModal: React.FC = () => {
     } finally {
       setClearingCache(false);
     }
-  };
-
-  const handleCheckUpdates = () => {
-    setCheckingUpdates(true);
-    setUpdateCheckMsg(null);
-    window.setTimeout(() => {
-      setCheckingUpdates(false);
-      setUpdateCheckMsg(
-        `Estás ejecutando Storia Studio v0.2.0 (${appSettings.updateChannel === "beta" ? "canal Beta" : "canal Estable"}). El servidor de actualizaciones automáticas estará disponible en una próxima versión.`,
-      );
-    }, 650);
   };
 
   const totalStorage = Math.max(1, storageStats?.totalBytes ?? 1);
@@ -1439,76 +1427,7 @@ export const AppSettingsModal: React.FC = () => {
             {/* ============================================================= */}
             {/* 16. ACTUALIZACIONES                                           */}
             {/* ============================================================= */}
-            {section === "updates" && (
-              <>
-                <div>
-                  <h3 className="text-[13.5px] font-bold mb-1">Actualizaciones de Storia Studio</h3>
-                  <p className="text-[11px]" style={{ color: "var(--text-muted)" }}>
-                    Gestiona el canal de lanzamientos y prepara el equipo para el sistema de actualizaciones automáticas.
-                  </p>
-                </div>
-
-                <div
-                  className="rounded-xl p-4 flex items-center justify-between gap-3"
-                  style={{ background: "var(--glass-hover)", border: "1px solid var(--border-subtle)" }}
-                >
-                  <div>
-                    <div className="flex items-center gap-2">
-                      <span className="text-[14px] font-extrabold font-mono-code">v0.2.0</span>
-                      <span
-                        className="text-[9.5px] font-mono-code px-2 py-0.5 rounded-full font-semibold"
-                        style={{ background: "rgba(76,230,200,0.16)", color: "var(--accent-teal)" }}
-                      >
-                        SOPORTE PRÓXIMO
-                      </span>
-                    </div>
-                    <div className="text-[11px] mt-1" style={{ color: "var(--text-secondary)" }}>
-                      El actualizador automático con descarga incremental y notas de versión estará disponible próximamente.
-                    </div>
-                  </div>
-                  <button
-                    className="studio-btn studio-btn-accent !px-3.5 !py-1.5 !text-[11px] shrink-0"
-                    disabled={checkingUpdates}
-                    onClick={handleCheckUpdates}
-                  >
-                    {checkingUpdates ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} />}
-                    Buscar actualizaciones
-                  </button>
-                </div>
-
-                {updateCheckMsg && (
-                  <div
-                    className="rounded-xl px-3 py-2 text-[11px]"
-                    style={{ background: "rgba(56,189,248,0.12)", border: "1px solid rgba(56,189,248,0.3)", color: "#bae6fd" }}
-                  >
-                    {updateCheckMsg}
-                  </div>
-                )}
-
-                <div className="grid grid-cols-2 gap-3">
-                  <label className="flex flex-col gap-1 text-[11px]" style={{ color: "var(--text-secondary)" }}>
-                    Canal de actualizaciones
-                    <select
-                      className="studio-input"
-                      value={appSettings.updateChannel}
-                      onChange={(e) => updateAppSettings({ updateChannel: e.target.value as "stable" | "beta" })}
-                    >
-                      <option value="stable" style={{ background: "#14161c", color: "#f3f4f6" }}>Estable (Recomendado)</option>
-                      <option value="beta" style={{ background: "#14161c", color: "#f3f4f6" }}>Beta / Acceso anticipado</option>
-                    </select>
-                  </label>
-                </div>
-
-                <label className="flex items-center gap-2 text-[11.5px] cursor-pointer">
-                  <input
-                    type="checkbox"
-                    checked={appSettings.autoCheckUpdates}
-                    onChange={(e) => updateAppSettings({ autoCheckUpdates: e.target.checked })}
-                  />
-                  Comprobar automáticamente si hay nuevas versiones al iniciar Storia Studio
-                </label>
-              </>
-            )}
+            {section === "updates" && <UpdatesSettingsPanel />}
 
             {/* ============================================================= */}
             {/* 17. SOBRE NOSOTROS                                            */}

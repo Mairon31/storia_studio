@@ -45,10 +45,11 @@
       "resources/runtime": "runtime"
     },
     "windows": {
+      "allowDowngrades": true,
       "nsis": {
         "installMode": "both",
         "languages": ["Spanish", "English"],
-        "displayLanguageSelector": true
+        "displayLanguageSelector": false
       },
       "wix": {
         "language": "es-ES"

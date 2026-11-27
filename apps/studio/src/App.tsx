@@ -7,6 +7,7 @@ import { LeftSidebar } from "./components/LeftSidebar";
 import { MobileStudioLayout } from "./components/MobileStudioLayout";
 import { OnboardingWizard } from "./components/OnboardingWizard";
 import { RemoteUnlockModal } from "./components/RemoteUnlockModal";
+import { UpdateBanner } from "./components/UpdateBanner";
 import { ReplaceResourceModal } from "./components/ReplaceResourceModal";
 import { SvgCodeEditorDrawer } from "./components/SvgCodeEditorDrawer";
 import { Timeline } from "./components/Timeline";
@@ -251,6 +252,7 @@ export const App: React.FC = () => {
       <SvgCodeEditorDrawer />
       <AppSettingsModal />
       <OnboardingWizard />
+      <UpdateBanner />
       <RemoteUnlockModal />
     </div>
   );

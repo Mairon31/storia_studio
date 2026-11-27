@@ -94,3 +94,17 @@ export function resolveDefaultTtsModelsDir(): string {
     ? path.resolve(override)
     : path.join(resolveDefaultModelsRootDir(), "tts");
 }
+
+export function resolveDefaultUpdatesConfigPath(): string {
+  const override = process.env.STORIA_UPDATES_CONFIG?.trim();
+  return override
+    ? path.resolve(override)
+    : path.join(resolveDefaultModelsRootDir(), "config", "updates.json");
+}
+
+export function resolveDefaultUpdatesDir(): string {
+  const override = process.env.STORIA_UPDATES_DIR?.trim();
+  return override
+    ? path.resolve(override)
+    : path.join(resolveDefaultModelsRootDir(), "updates");
+}

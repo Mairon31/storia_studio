@@ -1,9 +1,9 @@
 pub mod runtime;
 
 use runtime::{
-    current_platform_label, local_server_url, normalize_host_path, open_in_system, probe_ffmpeg,
-    probe_node, read_bind_config, resolve_storia_paths, BootSnapshot, ServerSupervisor, ToolProbe,
-    DEFAULT_PORT, LOOPBACK_ADDR,
+    current_platform_label, launch_verified_update_installer, local_server_url, normalize_host_path,
+    open_in_system, probe_ffmpeg, probe_node, read_bind_config, resolve_storia_paths, BootSnapshot,
+    ServerSupervisor, ToolProbe, DEFAULT_PORT, LOOPBACK_ADDR,
 };
 use std::path::PathBuf;
 use std::sync::{mpsc, Arc, Mutex};
@@ -227,6 +227,42 @@ async fn pick_folder(app: AppHandle, title: Option<String>) -> Result<Option<Str
         .map_err(|e| format!("No se pudo abrir el selector de carpetas: {}", e))
 }
 
+#[tauri::command]
+fn install_update_and_restart(
+    app: AppHandle,
+    state: State<'_, DesktopAppState>,
+    installer_path: String,
+) -> Result<bool, String> {
+    let paths = resolve_storia_paths(state.resource_dir.as_deref(), None)?;
+    let updates_dir = paths.models_dir.join("updates");
+    let installer = PathBuf::from(installer_path.trim());
+
+    // Stop local Node server first so Windows/Linux never hit file-in-use locks during update
+    state.supervisor.stop();
+
+    let should_exit = launch_verified_update_installer(&installer, &updates_dir)?;
+    if should_exit {
+        let app_clone = app.clone();
+        thread::spawn(move || {
+            thread::sleep(Duration::from_millis(250));
+            app_clone.exit(0);
+        });
+    }
+    Ok(should_exit)
+}
+
+#[tauri::command]
+fn get_desktop_build_info() -> serde_json::Value {
+    serde_json::json!({
+        "version": env!("CARGO_PKG_VERSION"),
+        "channel": env!("STORIA_BUILD_CHANNEL"),
+        "commitSha": env!("STORIA_BUILD_COMMIT"),
+        "commitShort": env!("STORIA_BUILD_SHORT"),
+        "repo": env!("STORIA_UPDATE_REPO"),
+        "platform": current_platform_label(),
+    })
+}
+
 fn focus_main_window(app: &AppHandle) {
     if let Some(win) = app.get_webview_window("main") {
         let _ = win.unminimize();
@@ -249,7 +285,9 @@ pub fn run() {
             restart_server,
             open_data_dir,
             open_external_url,
-            pick_folder
+            pick_folder,
+            install_update_and_restart,
+            get_desktop_build_info
         ])
         .setup(move |app| {
             let resource_dir = app.path().resource_dir().ok();

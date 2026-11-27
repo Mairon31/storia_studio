@@ -81,6 +81,7 @@ import {
 import { OnboardingManager } from "./onboarding.js";
 import { getSystemCapabilities } from "./system.js";
 import { TtsManager, TtsProviderId } from "./tts.js";
+import { UpdateManager } from "./updater.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DEFAULT_STUDIO_DIST = resolveDefaultStudioDistDir();
@@ -98,6 +99,10 @@ export interface BuildServerOptions {
   oauthStorePath?: string;
   onboardingConfigPath?: string;
   bootstrapConfigPath?: string;
+  updatesConfigPath?: string;
+  updatesDir?: string;
+  buildInfoPath?: string;
+  updateFetchImpl?: (url: string, init?: RequestInit) => Promise<Response>;
   isDesktopApp?: boolean;
   listeningHost?: string;
   listeningPort?: number;
@@ -387,6 +392,14 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
     isDesktopApp: options.isDesktopApp,
   });
 
+  const updateManager = new UpdateManager({
+    configPath: options.updatesConfigPath,
+    updatesDir: options.updatesDir,
+    buildInfoPath: options.buildInfoPath,
+    isDesktopApp: options.isDesktopApp,
+    fetchImpl: options.updateFetchImpl,
+  });
+
   app.addHook("onClose", async () => {
     await connectivityManager.stopTunnel();
     await closeHeadlessBrowser();
@@ -427,6 +440,9 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
     "/api/onboarding/complete",
     "/api/onboarding/skip",
     "/api/onboarding/reset",
+    "/api/updates/config",
+    "/api/updates/check",
+    "/api/updates/download",
     "/api/internal/",
   ];
 
@@ -677,6 +693,72 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
     }
     await onboardingManager.reset();
     return { ok: true, completed: false };
+  });
+
+  // ============================================================================
+  // DESKTOP AUTO-UPDATER (STABLE & NIGHTLY CHANNELS)
+  // ============================================================================
+
+  app.get("/api/updates/status", async (req) => {
+    const admin = checkStrictLocalAdminRequest(req);
+    const status = await updateManager.getStatus();
+    return {
+      ...status,
+      canAutoInstall: admin.ok ? status.canAutoInstall : false,
+      localAdminAllowed: admin.ok,
+      // Only expose local filesystem path to direct loopback host requests
+      download: admin.ok ? status.download : { ...status.download, localPath: undefined },
+    };
+  });
+
+  app.post("/api/updates/config", async (req, reply) => {
+    const admin = checkStrictLocalAdminRequest(req);
+    if (!admin.ok) {
+      return reply.status(403).send({ error: "local_admin_required", message: admin.reason });
+    }
+    const body = z
+      .object({
+        channel: z.enum(["stable", "nightly"]).optional(),
+        autoCheck: z.boolean().optional(),
+      })
+      .parse(req.body ?? {});
+    const config = await updateManager.updateConfig(body);
+    return { ok: true, config, status: await updateManager.getStatus() };
+  });
+
+  app.post("/api/updates/check", async (req, reply) => {
+    const admin = checkStrictLocalAdminRequest(req);
+    if (!admin.ok) {
+      return reply.status(403).send({ error: "local_admin_required", message: admin.reason });
+    }
+    const body = z
+      .object({
+        channel: z.enum(["stable", "nightly"]).optional(),
+      })
+      .parse(req.body ?? {});
+    const result = await updateManager.checkForUpdates(body.channel);
+    return { ok: !result.error, result, status: await updateManager.getStatus() };
+  });
+
+  app.post("/api/updates/download", async (req, reply) => {
+    const admin = checkStrictLocalAdminRequest(req);
+    if (!admin.ok) {
+      return reply.status(403).send({ error: "local_admin_required", message: admin.reason });
+    }
+    const body = z
+      .object({
+        channel: z.enum(["stable", "nightly"]).optional(),
+        wait: z.boolean().optional().default(false),
+      })
+      .parse(req.body ?? {});
+    const promise = updateManager.downloadUpdate(body.channel);
+    if (body.wait) {
+      const download = await promise;
+      return { ok: download.phase === "ready", download };
+    }
+    // Kick off in background so UI can poll progress bar cleanly
+    void promise;
+    return { ok: true, download: updateManager.getDownloadState() };
   });
 
   app.get("/api/projects", async () => {

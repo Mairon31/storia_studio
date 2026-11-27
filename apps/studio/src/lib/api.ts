@@ -1051,7 +1051,113 @@ export const studioApi = {
   async resetOnboarding(): Promise<{ ok: boolean; completed: boolean }> {
     return fetchJson("/api/onboarding/reset", { method: "POST", body: "{}" });
   },
+
+  async getUpdatesStatus(): Promise<UpdateStatusPayload> {
+    return fetchJson("/api/updates/status");
+  },
+
+  async updateUpdatesConfig(payload: {
+    channel?: UpdateChannel;
+    autoCheck?: boolean;
+  }): Promise<{ ok: boolean; config: UpdateConfig; status: UpdateStatusPayload }> {
+    return fetchJson("/api/updates/config", {
+      method: "POST",
+      body: JSON.stringify(payload),
+    });
+  },
+
+  async checkForUpdates(channel?: UpdateChannel): Promise<{
+    ok: boolean;
+    result: UpdateCheckResult;
+    status: UpdateStatusPayload;
+  }> {
+    return fetchJson("/api/updates/check", {
+      method: "POST",
+      body: JSON.stringify(channel ? { channel } : {}),
+    });
+  },
+
+  async downloadUpdate(
+    channel?: UpdateChannel,
+    wait = false,
+  ): Promise<{ ok: boolean; download: UpdateDownloadState }> {
+    return fetchJson("/api/updates/download", {
+      method: "POST",
+      body: JSON.stringify({ ...(channel ? { channel } : {}), wait }),
+    });
+  },
 };
+
+export type UpdateChannel = "stable" | "nightly";
+
+export interface InstalledBuildInfo {
+  version: string;
+  channel: UpdateChannel;
+  commitSha: string;
+  commitShort: string;
+  commitMessage: string;
+  builtAt: string;
+  repo: string;
+  platformKey: string;
+  isDesktopApp: boolean;
+}
+
+export interface RemotePlatformAsset {
+  filename: string;
+  url: string;
+  sha256: string;
+  size: number;
+  kind: "nsis" | "msi" | "dmg" | "appimage" | "deb" | "rpm" | "launcher" | "other";
+}
+
+export interface UpdateConfig {
+  channel: UpdateChannel;
+  autoCheck: boolean;
+  lastCheckedAt?: string;
+}
+
+export interface UpdateCheckResult {
+  checkedAt: string;
+  channel: UpdateChannel;
+  updateAvailable: boolean;
+  switchingChannel: boolean;
+  reason: string;
+  current: InstalledBuildInfo;
+  remote: {
+    version: string;
+    tag: string;
+    commitSha: string;
+    commitShort: string;
+    commitMessage: string;
+    publishedAt: string;
+    releaseUrl: string;
+    notes: string;
+  } | null;
+  asset: RemotePlatformAsset | null;
+  error?: string;
+}
+
+export interface UpdateDownloadState {
+  phase: "idle" | "downloading" | "verifying" | "ready" | "error";
+  channel?: UpdateChannel;
+  filename?: string;
+  localPath?: string;
+  sha256?: string;
+  bytesDownloaded: number;
+  totalBytes: number;
+  percent: number;
+  error?: string;
+  readyAt?: string;
+}
+
+export interface UpdateStatusPayload {
+  current: InstalledBuildInfo;
+  config: UpdateConfig;
+  lastCheck: UpdateCheckResult | null;
+  download: UpdateDownloadState;
+  canAutoInstall: boolean;
+  localAdminAllowed?: boolean;
+}
 
 export interface OnboardingPreferences {
   theme: "dark" | "light";

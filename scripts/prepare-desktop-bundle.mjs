@@ -232,6 +232,38 @@ async function main() {
     "utf8",
   );
 
+  // Stamp build metadata (`build-info.json`) used by the in-app Stable/Nightly auto-updater
+  const rootPkg = await readJson(path.join(ROOT_DIR, "package.json"));
+  const safeGit = (gitArgs) => {
+    try {
+      return execFileSync("git", gitArgs, { cwd: ROOT_DIR, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+    } catch {
+      return "";
+    }
+  };
+  const commitSha = (process.env.GITHUB_SHA || safeGit(["rev-parse", "HEAD"]) || "").trim();
+  const commitShort = commitSha ? commitSha.slice(0, 7) : "local";
+  const commitMessage = (process.env.STORIA_COMMIT_MESSAGE || safeGit(["log", "-1", "--pretty=%s"]) || "").trim();
+  const buildChannel = process.env.STORIA_BUILD_CHANNEL === "nightly" ? "nightly" : "stable";
+  const repoSlug = (process.env.GITHUB_REPOSITORY || process.env.STORIA_UPDATE_REPO || "Mairon31/storia_studio").trim();
+  await fs.writeFile(
+    path.join(RUNTIME_OUT, "build-info.json"),
+    JSON.stringify(
+      {
+        version: rootPkg.version || "0.2.0",
+        channel: buildChannel,
+        commitSha,
+        commitShort,
+        commitMessage,
+        builtAt: new Date().toISOString(),
+        repo: repoSlug,
+      },
+      null,
+      2,
+    ) + "\n",
+    "utf8",
+  );
+
   // Copy Python helper scripts for local Whisper & offline TTS
   await fs.mkdir(path.join(RUNTIME_OUT, "scripts"), { recursive: true });
   for (const scriptName of ["transcribe_audio.py", "tts_local.py"]) {
