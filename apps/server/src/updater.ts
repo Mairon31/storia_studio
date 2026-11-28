@@ -2,11 +2,14 @@ import { execFileSync } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import zlib from "node:zlib";
 import {
   isDesktopAppRuntime,
   REPO_RUNTIME_ROOT,
+  resolveDefaultRuntimeReleasesDir,
   resolveDefaultUpdatesConfigPath,
   resolveDefaultUpdatesDir,
+  resolveDesktopBootstrapConfigPath,
 } from "./dataPaths.js";
 import { safeFetchPublicUrl } from "./secretVault.js";
 
@@ -29,7 +32,7 @@ export interface RemotePlatformAsset {
   url: string;
   sha256: string;
   size: number;
-  kind: "nsis" | "msi" | "dmg" | "appimage" | "deb" | "rpm" | "launcher" | "other";
+  kind: "runtime" | "nsis" | "msi" | "dmg" | "appimage" | "deb" | "rpm" | "launcher" | "other";
 }
 
 export interface ReleaseManifest {
@@ -42,6 +45,7 @@ export interface ReleaseManifest {
   publishedAt: string;
   releaseUrl: string;
   notes: string;
+  runtime: RemotePlatformAsset | null;
   assets: Record<string, RemotePlatformAsset>;
 }
 
@@ -68,15 +72,18 @@ export interface UpdateCheckResult {
     releaseUrl: string;
     notes: string;
   } | null;
+  runtime: RemotePlatformAsset | null;
   asset: RemotePlatformAsset | null;
   error?: string;
 }
 
 export interface UpdateDownloadState {
-  phase: "idle" | "downloading" | "verifying" | "ready" | "error";
+  phase: "idle" | "downloading" | "verifying" | "extracting" | "ready" | "error";
+  installKind?: "runtime" | "installer";
   channel?: UpdateChannel;
   filename?: string;
   localPath?: string;
+  extractedRuntimeDir?: string;
   sha256?: string;
   bytesDownloaded: number;
   totalBytes: number;
@@ -96,6 +103,8 @@ export interface UpdateStatusPayload {
 export interface UpdateManagerOptions {
   configPath?: string;
   updatesDir?: string;
+  runtimeReleasesDir?: string;
+  bootstrapConfigPath?: string;
   buildInfoPath?: string;
   repo?: string;
   isDesktopApp?: boolean;
@@ -131,6 +140,7 @@ export function compareSemver(a: string, b: string): number {
 
 function classifyAssetKind(filename: string): RemotePlatformAsset["kind"] {
   const lower = filename.toLowerCase();
+  if (lower.startsWith("storia-runtime-") && lower.endsWith(".tar.gz")) return "runtime";
   if (lower.endsWith("-setup.exe") || (lower.endsWith(".exe") && !lower.includes("launcher"))) return "nsis";
   if (lower.endsWith(".msi")) return "msi";
   if (lower.endsWith(".dmg")) return "dmg";
@@ -143,7 +153,7 @@ function classifyAssetKind(filename: string): RemotePlatformAsset["kind"] {
 
 function inferPlatformForAsset(filename: string): string | null {
   const lower = filename.toLowerCase();
-  if (lower.includes("launcher")) return null;
+  if (lower.includes("launcher") || lower.startsWith("storia-runtime-")) return null;
   if (lower.endsWith(".exe") || lower.endsWith(".msi")) return "windows-x64";
   if (lower.endsWith(".dmg")) {
     if (lower.includes("aarch64") || lower.includes("arm64")) return "macos-arm64";
@@ -175,6 +185,131 @@ function assetPriority(kind: RemotePlatformAsset["kind"]): number {
   }
 }
 
+function parseNullTermAscii(buf: Buffer, start: number, len: number): string {
+  let end = start;
+  const max = Math.min(buf.length, start + len);
+  while (end < max && buf[end] !== 0) end++;
+  return buf.subarray(start, end).toString("utf8");
+}
+
+function parseTarOctal(buf: Buffer, start: number, len: number): number {
+  const raw = parseNullTermAscii(buf, start, len).trim();
+  if (!raw) return 0;
+  return Number.parseInt(raw, 8) || 0;
+}
+
+function parsePaxPath(paxBuf: Buffer): string | null {
+  const text = paxBuf.toString("utf8");
+  let idx = 0;
+  while (idx < text.length) {
+    const space = text.indexOf(" ", idx);
+    if (space < 0) break;
+    const recLen = Number.parseInt(text.slice(idx, space), 10);
+    if (!Number.isFinite(recLen) || recLen <= 0) break;
+    const record = text.slice(space + 1, idx + recLen).replace(/\n$/, "");
+    if (record.startsWith("path=")) {
+      return record.slice(5);
+    }
+    idx += recLen;
+  }
+  return null;
+}
+
+/**
+ * Pure Node.js safe `.tar.gz` extractor (supports USTAR, PAX `x` long paths, and GNU `L` long names).
+ * Rejects path traversal (`..`), absolute paths, symlinks, hardlinks, and device nodes.
+ */
+export async function extractTarGzSafely(gzipBuffer: Buffer, destDir: string): Promise<number> {
+  const tarBuf = zlib.gunzipSync(gzipBuffer);
+  const resolvedDest = path.resolve(destDir);
+  await fs.mkdir(resolvedDest, { recursive: true });
+
+  let offset = 0;
+  let pendingLongName: string | null = null;
+  let extractedFiles = 0;
+  let totalBytes = 0;
+  const MAX_TOTAL_BYTES = 512 * 1024 * 1024;
+
+  while (offset + 512 <= tarBuf.length) {
+    // Check for 512-byte zero EOF block
+    let allZero = true;
+    for (let i = 0; i < 512; i++) {
+      if (tarBuf[offset + i] !== 0) {
+        allZero = false;
+        break;
+      }
+    }
+    if (allZero) break;
+
+    const rawName = parseNullTermAscii(tarBuf, offset, 100);
+    const size = parseTarOctal(tarBuf, offset + 124, 12);
+    const typeFlag = String.fromCharCode(tarBuf[offset + 156] || 48);
+    const prefix = parseNullTermAscii(tarBuf, offset + 345, 155);
+
+    const dataStart = offset + 512;
+    const dataEnd = dataStart + size;
+    if (dataEnd > tarBuf.length) {
+      throw new Error("El archivo .tar.gz de actualización está truncado o dañado.");
+    }
+
+    const paddedSize = Math.ceil(size / 512) * 512;
+    offset = dataStart + paddedSize;
+
+    // GNU LongLink ('L') or PAX extended header ('x')
+    if (typeFlag === "L") {
+      pendingLongName = tarBuf.subarray(dataStart, dataEnd).toString("utf8").replace(/\0+$/, "");
+      continue;
+    }
+    if (typeFlag === "x") {
+      const paxPath = parsePaxPath(tarBuf.subarray(dataStart, dataEnd));
+      if (paxPath) pendingLongName = paxPath;
+      continue;
+    }
+    if (typeFlag === "g") {
+      continue;
+    }
+
+    const entryName = (pendingLongName ?? (prefix ? `${prefix}/${rawName}` : rawName))
+      .replace(/\\/g, "/")
+      .replace(/^\.\//, "")
+      .replace(/^\/+/, "");
+    pendingLongName = null;
+
+    if (!entryName || entryName === ".") continue;
+
+    // Reject path traversal & links
+    const parts = entryName.split("/").filter(Boolean);
+    if (parts.some((p) => p === ".." || p.includes("\0"))) {
+      throw new Error(`Ruta insegura detectada dentro del paquete de actualización: ${entryName}`);
+    }
+    if (typeFlag === "1" || typeFlag === "2" || typeFlag === "3" || typeFlag === "4" || typeFlag === "6") {
+      continue;
+    }
+
+    const targetPath = path.resolve(resolvedDest, ...parts);
+    if (targetPath !== resolvedDest && !targetPath.startsWith(resolvedDest + path.sep)) {
+      throw new Error(`Ruta fuera de destino detectada en el paquete: ${entryName}`);
+    }
+
+    if (typeFlag === "5" || entryName.endsWith("/")) {
+      await fs.mkdir(targetPath, { recursive: true });
+      continue;
+    }
+
+    if (typeFlag === "0" || typeFlag === "\0") {
+      totalBytes += size;
+      if (totalBytes > MAX_TOTAL_BYTES) {
+        throw new Error("El paquete de actualización excede el límite máximo permitido.");
+      }
+      await fs.mkdir(path.dirname(targetPath), { recursive: true });
+      await fs.writeFile(targetPath, tarBuf.subarray(dataStart, dataEnd));
+      extractedFiles++;
+    }
+  }
+
+  return extractedFiles;
+}
+
 function parseGithubApiRelease(
   raw: Record<string, unknown>,
   channel: UpdateChannel,
@@ -187,7 +322,6 @@ function parseGithubApiRelease(
   const releaseUrl = String(raw.html_url ?? `https://github.com/${repo}/releases/tag/${encodeURIComponent(tag)}`);
   const targetCommitish = String(raw.target_commitish ?? "");
 
-  // Extract commit SHA from release body metadata (`Commit: <40-hex>` or `(<7-hex>)`) or target_commitish
   const shaMatch =
     body.match(/\b([0-9a-f]{40})\b/i) ??
     targetCommitish.match(/^([0-9a-f]{40})$/i) ??
@@ -200,15 +334,20 @@ function parseGithubApiRelease(
   const version = channel === "nightly" && commitShort ? `${baseVer}-nightly.${commitShort}` : baseVer;
 
   const assets: Record<string, RemotePlatformAsset> = {};
+  let runtime: RemotePlatformAsset | null = null;
   const rawAssets = Array.isArray(raw.assets) ? (raw.assets as Record<string, unknown>[]) : [];
   for (const a of rawAssets) {
     const filename = String(a.name ?? "");
     const url = String(a.browser_download_url ?? "");
     const size = Number(a.size ?? 0);
     if (!filename || !url) continue;
+    const kind = classifyAssetKind(filename);
+    if (kind === "runtime") {
+      runtime = { filename, url, sha256: "", size, kind: "runtime" };
+      continue;
+    }
     const plat = inferPlatformForAsset(filename);
     if (!plat) continue;
-    const kind = classifyAssetKind(filename);
     const prev = assets[plat];
     if (!prev || assetPriority(kind) > assetPriority(prev.kind)) {
       assets[plat] = { filename, url, sha256: "", size, kind };
@@ -225,6 +364,7 @@ function parseGithubApiRelease(
     publishedAt,
     releaseUrl,
     notes: body,
+    runtime,
     assets,
   };
 }
@@ -232,6 +372,8 @@ function parseGithubApiRelease(
 export class UpdateManager {
   readonly configPath: string;
   readonly updatesDir: string;
+  readonly runtimeReleasesDir: string;
+  readonly bootstrapConfigPath: string;
   private readonly buildInfoPath: string;
   private readonly repoOverride?: string;
   private readonly isDesktop: boolean;
@@ -251,6 +393,12 @@ export class UpdateManager {
   constructor(options: UpdateManagerOptions = {}) {
     this.configPath = path.resolve(options.configPath ?? resolveDefaultUpdatesConfigPath());
     this.updatesDir = path.resolve(options.updatesDir ?? resolveDefaultUpdatesDir());
+    this.runtimeReleasesDir = path.resolve(
+      options.runtimeReleasesDir ?? resolveDefaultRuntimeReleasesDir(),
+    );
+    this.bootstrapConfigPath = path.resolve(
+      options.bootstrapConfigPath ?? resolveDesktopBootstrapConfigPath(),
+    );
     this.buildInfoPath = path.resolve(
       options.buildInfoPath ?? path.join(REPO_RUNTIME_ROOT, "build-info.json"),
     );
@@ -266,9 +414,26 @@ export class UpdateManager {
     }
     const { res } = await safeFetchPublicUrl(url, {
       headers: mergedHeaders,
-      signal: AbortSignal.timeout(25_000),
+      signal: AbortSignal.timeout(45_000),
     });
     return res;
+  }
+
+  /**
+   * Downloads a release asset URL; if GitHub Releases renamed spaces to dots (`.`)
+   * and an older manifest encoded spaces as `%20`, retries transparently with `.` and `-`.
+   */
+  private async fetchAssetWithGithubSpaceFallback(url: string): Promise<Response> {
+    const primary = await this.doFetch(url, { Accept: "application/octet-stream" });
+    if (primary.status !== 404 || !url.includes("%20")) {
+      return primary;
+    }
+    for (const replacement of [".", "-"]) {
+      const altUrl = url.replace(/%20/g, replacement);
+      const altRes = await this.doFetch(altUrl, { Accept: "application/octet-stream" });
+      if (altRes.ok) return altRes;
+    }
+    return primary;
   }
 
   async getInstalledBuildInfo(): Promise<InstalledBuildInfo> {
@@ -300,7 +465,6 @@ export class UpdateManager {
         repo = parsed.repo.trim();
       }
     } catch {
-      // Fallback for local monorepo dev without build-info.json
       try {
         const pkgRaw = await fs.readFile(path.join(REPO_RUNTIME_ROOT, "package.json"), "utf8");
         const pkg = JSON.parse(pkgRaw) as { version?: string };
@@ -388,6 +552,7 @@ export class UpdateManager {
       if (res.ok) {
         const json = (await res.json()) as Partial<ReleaseManifest>;
         if (json && typeof json.version === "string" && json.assets && typeof json.assets === "object") {
+          const runtimeRaw = json.runtime && typeof json.runtime === "object" ? (json.runtime as RemotePlatformAsset) : null;
           return {
             channel,
             tag: String(json.tag ?? (channel === "nightly" ? "nightly" : `v${json.version}`)),
@@ -401,6 +566,7 @@ export class UpdateManager {
                 `https://github.com/${repo}/releases/tag/${encodeURIComponent(String(json.tag ?? channel))}`,
             ),
             notes: String(json.notes ?? ""),
+            runtime: runtimeRaw && runtimeRaw.url ? runtimeRaw : null,
             assets: json.assets as Record<string, RemotePlatformAsset>,
           };
         }
@@ -437,6 +603,7 @@ export class UpdateManager {
     try {
       const manifest = await this.fetchManifestForChannel(current.repo, channel);
       const asset = manifest.assets[current.platformKey] ?? null;
+      const runtime = manifest.runtime ?? null;
       const switchingChannel = current.channel !== channel;
 
       let updateAvailable = false;
@@ -508,6 +675,7 @@ export class UpdateManager {
           releaseUrl: manifest.releaseUrl,
           notes: manifest.notes,
         },
+        runtime,
         asset,
       };
 
@@ -527,11 +695,58 @@ export class UpdateManager {
         reason: msg,
         current,
         remote: null,
+        runtime: null,
         asset: null,
         error: msg,
       };
       this.lastCheck = result;
       return result;
+    }
+  }
+
+  private async activateRuntimeInBootstrap(extractedRuntimeDir: string): Promise<void> {
+    await fs.mkdir(path.dirname(this.bootstrapConfigPath), { recursive: true });
+    let existing: Record<string, unknown> = {};
+    try {
+      const raw = await fs.readFile(this.bootstrapConfigPath, "utf8");
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") existing = parsed as Record<string, unknown>;
+    } catch {
+      // Fresh bootstrap config
+    }
+
+    const bundledStamp = (process.env.STORIA_BUNDLED_RUNTIME_STAMP ?? "").trim();
+    const payload: Record<string, unknown> = {
+      ...existing,
+      version: 1,
+      updatedAt: new Date().toISOString(),
+      activeRuntimeDir: path.resolve(extractedRuntimeDir),
+      ...(bundledStamp ? { bundledRuntimeStamp: bundledStamp } : {}),
+    };
+    const tmpPath = `${this.bootstrapConfigPath}.tmp`;
+    await fs.writeFile(tmpPath, JSON.stringify(payload, null, 2) + "\n", "utf8");
+    await fs.rename(tmpPath, this.bootstrapConfigPath);
+  }
+
+  private async pruneOldRuntimeReleases(keepDir: string): Promise<void> {
+    try {
+      const entries = await fs.readdir(this.runtimeReleasesDir, { withFileTypes: true });
+      const dirs: { fullPath: string; mtimeMs: number }[] = [];
+      for (const e of entries) {
+        if (!e.isDirectory()) continue;
+        const fullPath = path.join(this.runtimeReleasesDir, e.name);
+        if (path.resolve(fullPath) === path.resolve(keepDir)) continue;
+        if (path.resolve(fullPath) === path.resolve(REPO_RUNTIME_ROOT)) continue;
+        const st = await fs.stat(fullPath).catch(() => null);
+        if (st) dirs.push({ fullPath, mtimeMs: st.mtimeMs });
+      }
+      // Keep the most recent previous runtime for rollback, delete older ones
+      dirs.sort((a, b) => b.mtimeMs - a.mtimeMs);
+      for (const old of dirs.slice(1)) {
+        await fs.rm(old.fullPath, { recursive: true, force: true }).catch(() => {});
+      }
+    } catch {
+      // Best-effort cleanup
     }
   }
 
@@ -544,48 +759,60 @@ export class UpdateManager {
       const cfg = await this.getConfig();
       const targetChannel = channelOverride ?? cfg.channel;
       const check =
-        this.lastCheck && this.lastCheck.channel === targetChannel && this.lastCheck.asset
+        this.lastCheck &&
+        this.lastCheck.channel === targetChannel &&
+        (this.lastCheck.runtime || this.lastCheck.asset)
           ? this.lastCheck
           : await this.checkForUpdates(targetChannel);
 
-      if (check.error || !check.asset) {
+      // Prefer internal runtime package (`storia-runtime-*.tar.gz`) for seamless in-place updates;
+      // fall back to platform installer only for legacy releases without a runtime archive.
+      const chosenAsset = check.runtime ?? check.asset;
+      const installKind: "runtime" | "installer" = check.runtime ? "runtime" : "installer";
+
+      if (check.error || !chosenAsset) {
         this.downloadState = {
           phase: "error",
+          installKind,
           channel: targetChannel,
           bytesDownloaded: 0,
           totalBytes: 0,
           percent: 0,
           error:
             check.error ??
-            `No se encontró un instalador compatible para tu plataforma (${check.current.platformKey}) en el canal ${targetChannel}.`,
+            `No se encontró un paquete de actualización compatible para tu plataforma (${check.current.platformKey}) en el canal ${targetChannel}.`,
         };
         return { ...this.downloadState };
       }
 
-      const asset = check.asset;
-      const safeName = path.basename(asset.filename).replace(/[^a-zA-Z0-9._ -]/g, "_");
+      const safeName = path.basename(chosenAsset.filename).replace(/[^a-zA-Z0-9._-]/g, "-");
       await fs.mkdir(this.updatesDir, { recursive: true });
       const destPath = path.join(this.updatesDir, safeName);
       const tmpPath = `${destPath}.part`;
 
       this.downloadState = {
         phase: "downloading",
+        installKind,
         channel: targetChannel,
         filename: safeName,
         localPath: destPath,
         bytesDownloaded: 0,
-        totalBytes: asset.size || 0,
+        totalBytes: chosenAsset.size || 0,
         percent: 0,
       };
 
       try {
-        const res = await this.doFetch(asset.url, { Accept: "application/octet-stream" });
+        const res = await this.fetchAssetWithGithubSpaceFallback(chosenAsset.url);
         if (!res.ok) {
-          throw new Error(`Error al descargar el instalador (HTTP ${res.status}).`);
+          throw new Error(
+            installKind === "runtime"
+              ? `Error al descargar los archivos de actualización (HTTP ${res.status}).`
+              : `Error al descargar el instalador (HTTP ${res.status}).`,
+          );
         }
 
         const headerTotal = Number(res.headers.get("content-length") ?? 0);
-        const totalBytes = headerTotal > 0 ? headerTotal : asset.size || 0;
+        const totalBytes = headerTotal > 0 ? headerTotal : chosenAsset.size || 0;
         this.downloadState.totalBytes = totalBytes;
 
         const hasher = crypto.createHash("sha256");
@@ -604,7 +831,7 @@ export class UpdateManager {
               downloaded += buf.byteLength;
               this.downloadState.bytesDownloaded = downloaded;
               this.downloadState.percent =
-                totalBytes > 0 ? Math.min(99, Math.round((downloaded / totalBytes) * 100)) : 50;
+                totalBytes > 0 ? Math.min(92, Math.round((downloaded / totalBytes) * 92)) : 50;
             }
           }
         } else {
@@ -614,13 +841,13 @@ export class UpdateManager {
           downloaded = buf.byteLength;
           this.downloadState.bytesDownloaded = downloaded;
           this.downloadState.totalBytes = downloaded;
-          this.downloadState.percent = 99;
+          this.downloadState.percent = 92;
         }
 
         this.downloadState.phase = "verifying";
         const computedSha = hasher.digest("hex").toLowerCase();
-        if (asset.sha256 && asset.sha256.trim().length === 64) {
-          const expected = asset.sha256.trim().toLowerCase();
+        if (chosenAsset.sha256 && chosenAsset.sha256.trim().length === 64) {
+          const expected = chosenAsset.sha256.trim().toLowerCase();
           if (computedSha !== expected) {
             throw new Error(
               `Verificación SHA-256 fallida (esperado ${expected.slice(0, 12)}…, obtenido ${computedSha.slice(0, 12)}…). Descarga cancelada por seguridad.`,
@@ -632,11 +859,45 @@ export class UpdateManager {
         await fs.writeFile(tmpPath, fullBuf);
         await fs.rename(tmpPath, destPath);
 
+        let extractedRuntimeDir: string | undefined;
+        if (installKind === "runtime") {
+          this.downloadState.phase = "extracting";
+          this.downloadState.percent = 96;
+
+          const shortId =
+            (check.remote?.commitShort || check.remote?.version || Date.now().toString(36)).replace(
+              /[^a-zA-Z0-9._-]/g,
+              "",
+            );
+          const releaseFolderName = `${targetChannel}-${shortId}-${Date.now().toString(36)}`;
+          const stagingDir = path.join(this.runtimeReleasesDir, `${releaseFolderName}.tmp`);
+          const finalDir = path.join(this.runtimeReleasesDir, releaseFolderName);
+
+          await fs.rm(stagingDir, { recursive: true, force: true }).catch(() => {});
+          try {
+            await extractTarGzSafely(fullBuf, stagingDir);
+            const serverEntry = path.join(stagingDir, "apps", "server", "dist", "index.js");
+            const studioIndex = path.join(stagingDir, "apps", "studio", "dist", "index.html");
+            await fs.access(serverEntry);
+            await fs.access(studioIndex);
+
+            await fs.rename(stagingDir, finalDir);
+            await this.activateRuntimeInBootstrap(finalDir);
+            await this.pruneOldRuntimeReleases(finalDir);
+            extractedRuntimeDir = finalDir;
+          } catch (extractErr) {
+            await fs.rm(stagingDir, { recursive: true, force: true }).catch(() => {});
+            throw extractErr;
+          }
+        }
+
         this.downloadState = {
           phase: "ready",
+          installKind,
           channel: targetChannel,
           filename: safeName,
           localPath: destPath,
+          extractedRuntimeDir,
           sha256: computedSha,
           bytesDownloaded: fullBuf.byteLength,
           totalBytes: fullBuf.byteLength,
@@ -649,6 +910,7 @@ export class UpdateManager {
         const msg = err instanceof Error ? err.message : String(err);
         this.downloadState = {
           phase: "error",
+          installKind,
           channel: targetChannel,
           filename: safeName,
           bytesDownloaded: this.downloadState.bytesDownloaded,

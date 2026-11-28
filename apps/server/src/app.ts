@@ -101,6 +101,7 @@ export interface BuildServerOptions {
   bootstrapConfigPath?: string;
   updatesConfigPath?: string;
   updatesDir?: string;
+  runtimeReleasesDir?: string;
   buildInfoPath?: string;
   updateFetchImpl?: (url: string, init?: RequestInit) => Promise<Response>;
   isDesktopApp?: boolean;
@@ -395,6 +396,8 @@ export async function buildServer(options: BuildServerOptions): Promise<FastifyI
   const updateManager = new UpdateManager({
     configPath: options.updatesConfigPath,
     updatesDir: options.updatesDir,
+    runtimeReleasesDir: options.runtimeReleasesDir,
+    bootstrapConfigPath: options.bootstrapConfigPath,
     buildInfoPath: options.buildInfoPath,
     isDesktopApp: options.isDesktopApp,
     fetchImpl: options.updateFetchImpl,

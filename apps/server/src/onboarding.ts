@@ -195,13 +195,26 @@ export class OnboardingManager {
   private async writeDesktopBootstrap(paths: OnboardingStoredState["paths"]): Promise<void> {
     if (!this.isDesktop && !process.env.STORIA_BOOTSTRAP_CONFIG) return;
     await fs.mkdir(path.dirname(this.bootstrapConfigPath), { recursive: true });
-    const payload = {
+    let existing: Record<string, unknown> = {};
+    try {
+      const raw = await fs.readFile(this.bootstrapConfigPath, "utf8");
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") existing = parsed as Record<string, unknown>;
+    } catch {
+      // ignore if missing
+    }
+    const payload: Record<string, unknown> = {
+      ...existing,
       version: 1,
       updatedAt: new Date().toISOString(),
       projectsDir: paths.projectsDir,
       modelsDir: paths.modelsDir,
-      ...(paths.customAssetsDir ? { customAssetsDir: paths.customAssetsDir } : {}),
     };
+    if (paths.customAssetsDir) {
+      payload.customAssetsDir = paths.customAssetsDir;
+    } else {
+      delete payload.customAssetsDir;
+    }
     await fs.writeFile(this.bootstrapConfigPath, JSON.stringify(payload, null, 2) + "\n", "utf8");
   }
 

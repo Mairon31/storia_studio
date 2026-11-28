@@ -8,9 +8,6 @@ on:
     paths:
       - "docs/**"
       - ".github/workflows/pages.yml"
-      - "pnpm-lock.yaml"
-      - "pnpm-workspace.yaml"
-      - "package.json"
   workflow_dispatch:
 
 permissions:

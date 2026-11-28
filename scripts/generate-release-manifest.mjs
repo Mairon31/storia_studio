@@ -1,14 +1,12 @@
 #!/usr/bin/env node
 /**
  * Generates `latest-stable.json` or `latest-nightly.json` + `SHA256SUMS.txt`
- * from a directory of built desktop installers for Storia Studio's in-app auto-updater.
+ * from a directory of built desktop packages for Storia Studio's in-app auto-updater.
  *
- * Usage:
- *   node scripts/generate-release-manifest.mjs \
- *     --dir release-assets \
- *     --channel nightly \
- *     --tag nightly \
- *     --repo Mairon31/storia_studio
+ * Publishes:
+ *   - `runtime`: cross-platform internal runtime bundle (`storia-runtime-*.tar.gz`)
+ *     used for instant in-place app updates without launching an OS installer.
+ *   - `assets`: per-platform native installers (Windows, macOS, Linux) with GitHub-safe URLs.
  */
 import { execFileSync } from "node:child_process";
 import crypto from "node:crypto";
@@ -34,6 +32,7 @@ function parseArgs(argv) {
 
 function classifyAssetKind(filename) {
   const lower = filename.toLowerCase();
+  if (lower.startsWith("storia-runtime-") && lower.endsWith(".tar.gz")) return "runtime";
   if (lower.endsWith("-setup.exe") || (lower.endsWith(".exe") && !lower.includes("launcher"))) return "nsis";
   if (lower.endsWith(".msi")) return "msi";
   if (lower.endsWith(".dmg")) return "dmg";
@@ -46,7 +45,7 @@ function classifyAssetKind(filename) {
 
 function inferPlatformKey(filename) {
   const lower = filename.toLowerCase();
-  if (lower.includes("launcher")) return null;
+  if (lower.includes("launcher") || lower.startsWith("storia-runtime-")) return null;
   if (lower.endsWith(".exe") || lower.endsWith(".msi")) return "windows-x64";
   if (lower.endsWith(".dmg")) {
     if (lower.includes("aarch64") || lower.includes("arm64")) return "macos-arm64";
@@ -78,6 +77,14 @@ function priorityForKind(kind) {
   }
 }
 
+/**
+ * GitHub Releases sanitizes spaces in uploaded filenames to dots (`.`), which causes 404
+ * if manifest URLs encode spaces as `%20`. Normalize filenames cleanly on disk first.
+ */
+function sanitizeReleaseFilename(filename) {
+  return filename.replace(/\s+/g, "-").replace(/[^a-zA-Z0-9._-]/g, "-");
+}
+
 function safeGit(args) {
   try {
     return execFileSync("git", args, { cwd: ROOT_DIR, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
@@ -102,13 +109,24 @@ async function main() {
   const version = channel === "nightly" ? `${baseVersion}-nightly.${commitShort}` : tag.replace(/^v/i, "");
   const publishedAt = new Date().toISOString();
 
-  const entries = (await fs.readdir(assetsDir, { withFileTypes: true }))
+  // First sanitize any filenames containing spaces so GitHub Releases never mutates them
+  const rawEntries = (await fs.readdir(assetsDir, { withFileTypes: true }))
     .filter((e) => e.isFile() && e.name !== "SHA256SUMS.txt" && !e.name.startsWith("latest-"))
     .map((e) => e.name)
     .sort();
 
+  const entries = [];
+  for (const origName of rawEntries) {
+    const cleanName = sanitizeReleaseFilename(origName);
+    if (cleanName !== origName) {
+      await fs.rename(path.join(assetsDir, origName), path.join(assetsDir, cleanName));
+    }
+    entries.push(cleanName);
+  }
+
   const checksumLines = [];
   const platformAssets = {};
+  let runtimeAsset = null;
 
   for (const filename of entries) {
     const fullPath = path.join(assetsDir, filename);
@@ -116,14 +134,27 @@ async function main() {
     const sha256 = crypto.createHash("sha256").update(buf).digest("hex");
     checksumLines.push(`${sha256}  ${filename}`);
 
+    const kind = classifyAssetKind(filename);
+    const url = `https://github.com/${repo}/releases/download/${encodeURIComponent(tag)}/${encodeURIComponent(filename)}`;
+
+    if (kind === "runtime") {
+      runtimeAsset = {
+        filename,
+        url,
+        sha256,
+        size: buf.byteLength,
+        kind: "runtime",
+      };
+      continue;
+    }
+
     const plat = inferPlatformKey(filename);
     if (!plat) continue;
-    const kind = classifyAssetKind(filename);
     const prev = platformAssets[plat];
     if (!prev || priorityForKind(kind) > priorityForKind(prev.kind)) {
       platformAssets[plat] = {
         filename,
-        url: `https://github.com/${repo}/releases/download/${encodeURIComponent(tag)}/${encodeURIComponent(filename)}`,
+        url,
         sha256,
         size: buf.byteLength,
         kind,
@@ -146,12 +177,15 @@ async function main() {
       channel === "nightly"
         ? `Compilación automática Nightly desde master (${commitShort}): ${commitMessage || "Últimos cambios de desarrollo"}`
         : `Lanzamiento estable Storia Studio ${tag}`,
+    runtime: runtimeAsset,
     assets: platformAssets,
   };
 
   const manifestFilename = channel === "nightly" ? "latest-nightly.json" : "latest-stable.json";
   await fs.writeFile(path.join(assetsDir, manifestFilename), JSON.stringify(manifest, null, 2) + "\n", "utf8");
-  console.log(`[release-manifest] Wrote ${manifestFilename} (${Object.keys(platformAssets).length} platforms) + SHA256SUMS.txt (${checksumLines.length} files).`);
+  console.log(
+    `[release-manifest] Wrote ${manifestFilename} (runtime=${runtimeAsset ? runtimeAsset.filename : "none"}, ${Object.keys(platformAssets).length} platforms) + SHA256SUMS.txt (${checksumLines.length} files).`,
+  );
 }
 
 main().catch((err) => {

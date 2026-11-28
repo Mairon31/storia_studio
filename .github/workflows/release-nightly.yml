@@ -126,9 +126,13 @@ jobs:
             "$TARGET_DIR"/bundle/deb/*.deb \
             "$TARGET_DIR"/bundle/rpm/*.rpm \
             "$TARGET_DIR"/bundle/appimage/*.AppImage; do
-            BASE="$(basename "$f")"
+            BASE="$(basename "$f" | tr ' ' '-')"
             cp "$f" "$OUT/nightly-${BASE}"
           done
+
+          if [ "${{ matrix.os_label }}" = "linux-x64" ]; then
+            tar -czf "$OUT/storia-runtime-nightly.tar.gz" -C apps/desktop/src-tauri/resources/runtime .
+          fi
 
           LAUNCHER_SRC="$TARGET_DIR/storia-launcher${{ matrix.launcher_ext }}"
           if [ -f "$LAUNCHER_SRC" ]; then

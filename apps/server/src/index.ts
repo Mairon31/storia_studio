@@ -7,10 +7,12 @@ import {
   resolveDefaultOAuthStorePath,
   resolveDefaultOnboardingConfigPath,
   resolveDefaultProjectsDir,
+  resolveDefaultRuntimeReleasesDir,
   resolveDefaultStudioDistDir,
   resolveDefaultTtsModelsDir,
   resolveDefaultUpdatesConfigPath,
   resolveDefaultUpdatesDir,
+  resolveDesktopBootstrapConfigPath,
 } from "./dataPaths.js";
 
 const connectivityConfigPath = resolveDefaultConnectivityConfigPath();
@@ -24,8 +26,10 @@ const ttsModelsDir = resolveDefaultTtsModelsDir();
 const librariesConfigPath = resolveDefaultLibrariesConfigPath();
 const oauthStorePath = resolveDefaultOAuthStorePath();
 const onboardingConfigPath = resolveDefaultOnboardingConfigPath();
+const bootstrapConfigPath = resolveDesktopBootstrapConfigPath();
 const updatesConfigPath = resolveDefaultUpdatesConfigPath();
 const updatesDir = resolveDefaultUpdatesDir();
+const runtimeReleasesDir = resolveDefaultRuntimeReleasesDir();
 
 const app = await buildServer({
   projectsDir,
@@ -36,8 +40,10 @@ const app = await buildServer({
   librariesConfigPath,
   oauthStorePath,
   onboardingConfigPath,
+  bootstrapConfigPath,
   updatesConfigPath,
   updatesDir,
+  runtimeReleasesDir,
   listeningHost: host,
   listeningPort: port,
   logger: true,

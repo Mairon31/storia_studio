@@ -120,14 +120,29 @@ export const UpdatesSettingsPanel: React.FC = () => {
     }
   };
 
-  const triggerNativeInstall = async (localPath: string) => {
+  const triggerNativeInstall = async (dl: NonNullable<UpdateStatusPayload["download"]>) => {
     const invoke = getTauriInvoke();
     if (!invoke) return;
     setInstalling(true);
+    if (dl.installKind === "runtime") {
+      setBusyNotice("Aplicando actualización interna y reiniciando Storia Studio…");
+      try {
+        await invoke("restart_server");
+      } catch (err) {
+        setInstalling(false);
+        setErrorMsg(err instanceof Error ? err.message : String(err));
+        setBusyNotice(null);
+      }
+      return;
+    }
+    if (!dl.localPath) {
+      setInstalling(false);
+      return;
+    }
     setBusyNotice("Instalando actualización y reiniciando Storia Studio…");
     try {
       const willRestart = await invoke<boolean>("install_update_and_restart", {
-        installerPath: localPath,
+        installerPath: dl.localPath,
       });
       if (!willRestart) {
         setInstalling(false);
@@ -153,8 +168,8 @@ export const UpdatesSettingsPanel: React.FC = () => {
       return;
     }
 
-    if (status.download.phase === "ready" && status.download.localPath && status.download.channel === channel) {
-      await triggerNativeInstall(status.download.localPath);
+    if (status.download.phase === "ready" && status.download.channel === channel) {
+      await triggerNativeInstall(status.download);
       return;
     }
 
@@ -166,9 +181,9 @@ export const UpdatesSettingsPanel: React.FC = () => {
         try {
           const latest = await studioApi.getUpdatesStatus();
           setStatus(latest);
-          if (latest.download.phase === "ready" && latest.download.localPath) {
+          if (latest.download.phase === "ready") {
             stopPolling();
-            await triggerNativeInstall(latest.download.localPath);
+            await triggerNativeInstall(latest.download);
           } else if (latest.download.phase === "error") {
             stopPolling();
             setErrorMsg(latest.download.error ?? "No se pudo descargar la actualización.");
@@ -186,9 +201,13 @@ export const UpdatesSettingsPanel: React.FC = () => {
   const config = status?.config;
   const check = status?.lastCheck;
   const download = status?.download;
-  const isDownloading = download?.phase === "downloading" || download?.phase === "verifying";
+  const isDownloading =
+    download?.phase === "downloading" ||
+    download?.phase === "verifying" ||
+    download?.phase === "extracting";
   const isDesktop = Boolean(getTauriInvoke()) && Boolean(status?.canAutoInstall);
   const selectedChannel: UpdateChannel = config?.channel ?? "stable";
+  const effectivePackage = check?.runtime ?? check?.asset ?? null;
 
   return (
     <div className="flex flex-col gap-3.5">
@@ -371,9 +390,10 @@ export const UpdatesSettingsPanel: React.FC = () => {
                   Último cambio: {check.remote.commitMessage}
                 </div>
               )}
-              {check.asset && check.updateAvailable && (
+              {effectivePackage && check.updateAvailable && (
                 <div className="text-[10px] font-mono-code mt-0.5" style={{ color: "var(--text-muted)" }}>
-                  Paquete: {check.asset.filename} ({formatMb(check.asset.size)})
+                  {check.runtime ? "Actualización interna" : "Paquete"}: {effectivePackage.filename} (
+                  {formatMb(effectivePackage.size)})
                 </div>
               )}
             </div>
@@ -381,7 +401,7 @@ export const UpdatesSettingsPanel: React.FC = () => {
             {check.updateAvailable && check.remote && (
               <button
                 type="button"
-                disabled={isDownloading || installing || (!check.asset && isDesktop)}
+                disabled={isDownloading || installing || (!effectivePackage && isDesktop)}
                 onClick={() => void handleDownloadAndInstall()}
                 className="studio-btn studio-btn-accent !px-3.5 !py-1.5 !text-[11px] font-semibold shrink-0"
               >
@@ -397,7 +417,7 @@ export const UpdatesSettingsPanel: React.FC = () => {
                   : isDownloading
                     ? `${download?.percent ?? 0}%`
                     : isDesktop
-                      ? "Descargar, instalar y reiniciar"
+                      ? "Actualizar y reiniciar"
                       : "Abrir en GitHub Releases"}
               </button>
             )}
@@ -407,9 +427,11 @@ export const UpdatesSettingsPanel: React.FC = () => {
             <div className="flex flex-col gap-1">
               <div className="flex justify-between text-[10px] font-mono-code" style={{ color: "var(--text-secondary)" }}>
                 <span>
-                  {download.phase === "verifying"
-                    ? "Verificando integridad SHA-256…"
-                    : `Descargando ${formatMb(download.bytesDownloaded)} / ${formatMb(download.totalBytes)}`}
+                  {download.phase === "extracting"
+                    ? "Aplicando archivos internos…"
+                    : download.phase === "verifying"
+                      ? "Verificando integridad SHA-256…"
+                      : `Descargando ${formatMb(download.bytesDownloaded)} / ${formatMb(download.totalBytes)}`}
                 </span>
                 <span>{download.percent}%</span>
               </div>

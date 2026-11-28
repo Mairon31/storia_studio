@@ -36,6 +36,7 @@ pub struct ToolProbe {
 #[serde(rename_all = "camelCase")]
 pub struct StoriaPaths {
     pub runtime_root: PathBuf,
+    pub bundled_runtime_stamp: String,
     pub install_dir: PathBuf,
     pub server_entry: PathBuf,
     pub studio_dist: PathBuf,
@@ -94,6 +95,8 @@ struct BootstrapOverrides {
     projects_dir: Option<PathBuf>,
     models_dir: Option<PathBuf>,
     custom_assets_dir: Option<PathBuf>,
+    active_runtime_dir: Option<PathBuf>,
+    bundled_runtime_stamp: Option<String>,
 }
 
 fn read_desktop_bootstrap_overrides(path: &Path) -> BootstrapOverrides {
@@ -119,7 +122,48 @@ fn read_desktop_bootstrap_overrides(path: &Path) -> BootstrapOverrides {
             out.custom_assets_dir = Some(PathBuf::from(s.trim()));
         }
     }
+    if let Some(s) = json.get("activeRuntimeDir").and_then(|v| v.as_str()) {
+        if !s.trim().is_empty() {
+            out.active_runtime_dir = Some(PathBuf::from(s.trim()));
+        }
+    }
+    if let Some(s) = json.get("bundledRuntimeStamp").and_then(|v| v.as_str()) {
+        if !s.trim().is_empty() {
+            out.bundled_runtime_stamp = Some(s.trim().to_string());
+        }
+    }
     out
+}
+
+fn read_runtime_build_stamp(runtime_root: &Path) -> String {
+    let info_path = runtime_root.join("build-info.json");
+    if let Ok(raw) = fs::read_to_string(&info_path) {
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&raw) {
+            let built_at = json
+                .get("builtAt")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim();
+            let sha = json
+                .get("commitSha")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim();
+            let ver = json
+                .get("version")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .trim();
+            if !sha.is_empty() || !built_at.is_empty() {
+                return format!("{}|{}|{}", ver, sha, built_at);
+            }
+        }
+    }
+    format!(
+        "{}|{}",
+        env!("CARGO_PKG_VERSION"),
+        env!("STORIA_BUILD_COMMIT")
+    )
 }
 
 /// Strips Windows extended-length verbatim path prefixes (`\\?\C:\...` -> `C:\...`,
@@ -204,15 +248,15 @@ pub fn resolve_storia_paths(
         }
     }
 
-    let (runtime_root, server_entry, is_bundled) = found.ok_or_else(|| {
+    let (bundled_runtime_root, bundled_server_entry, is_bundled) = found.ok_or_else(|| {
         "No se encontró el servidor compilado de Storia Studio (apps/server/dist/index.js). Ejecuta `pnpm build` o reinstala Storia Studio.".to_string()
     })?;
 
-    let studio_dist = runtime_root.join("apps").join("studio").join("dist");
+    let bundled_runtime_stamp = read_runtime_build_stamp(&bundled_runtime_root);
     let install_dir = env::current_exe()
         .ok()
         .and_then(|p| p.parent().map(|d| d.to_path_buf()))
-        .unwrap_or_else(|| runtime_root.clone());
+        .unwrap_or_else(|| bundled_runtime_root.clone());
 
     let bootstrap_config_path = desktop_bootstrap_config_path();
     let boot_ov = if is_bundled {
@@ -220,6 +264,44 @@ pub fn resolve_storia_paths(
     } else {
         BootstrapOverrides::default()
     };
+
+    // If an in-app runtime update was applied for this bundled shell (same bundledRuntimeStamp),
+    // boot directly from the updated internal runtime directory without needing an OS installer.
+    let mut runtime_root = bundled_runtime_root;
+    let mut server_entry = bundled_server_entry;
+    if is_bundled {
+        if let Some(ref active_dir) = boot_ov.active_runtime_dir {
+            let stamp_matches = boot_ov
+                .bundled_runtime_stamp
+                .as_deref()
+                .map(|s| s == bundled_runtime_stamp)
+                .unwrap_or(true);
+            let active_entry = active_dir
+                .join("apps")
+                .join("server")
+                .join("dist")
+                .join("index.js");
+            let active_studio = active_dir
+                .join("apps")
+                .join("studio")
+                .join("dist")
+                .join("index.html");
+            if stamp_matches && active_entry.is_file() && active_studio.is_file() {
+                runtime_root = normalize_host_path(
+                    fs::canonicalize(active_dir).unwrap_or_else(|_| active_dir.clone()),
+                );
+                server_entry = normalize_host_path(
+                    runtime_root
+                        .join("apps")
+                        .join("server")
+                        .join("dist")
+                        .join("index.js"),
+                );
+            }
+        }
+    }
+
+    let studio_dist = runtime_root.join("apps").join("studio").join("dist");
 
     let data_dir = if let Some(ov) = data_dir_override {
         ov.to_path_buf()
@@ -265,6 +347,7 @@ pub fn resolve_storia_paths(
 
     Ok(StoriaPaths {
         runtime_root: normalize_host_path(runtime_root),
+        bundled_runtime_stamp,
         install_dir: normalize_host_path(install_dir),
         server_entry: normalize_host_path(server_entry),
         studio_dist: normalize_host_path(studio_dist),
@@ -635,6 +718,7 @@ impl ServerSupervisor {
             .env("STORIA_BOOTSTRAP_CONFIG", &paths.bootstrap_config_path)
             .env("STORIA_SERVER_HOST", &bind.host)
             .env("STORIA_SERVER_PORT", bind.port.to_string())
+            .env("STORIA_BUNDLED_RUNTIME_STAMP", &paths.bundled_runtime_stamp)
             .env("STORIA_BUILD_CHANNEL", env!("STORIA_BUILD_CHANNEL"))
             .env("STORIA_BUILD_COMMIT", env!("STORIA_BUILD_COMMIT"))
             .env("STORIA_UPDATE_REPO", env!("STORIA_UPDATE_REPO"))

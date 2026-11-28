@@ -75,17 +75,35 @@ export const UpdateBanner: React.FC = () => {
   }
 
   const download = status.download;
-  const isDownloading = download.phase === "downloading" || download.phase === "verifying";
+  const isDownloading =
+    download.phase === "downloading" ||
+    download.phase === "verifying" ||
+    download.phase === "extracting";
   const isDesktop = Boolean(getTauriInvoke()) && status.canAutoInstall;
 
-  const triggerInstallAfterDownload = async (localPath: string) => {
+  const triggerInstallAfterDownload = async (dl: typeof download) => {
     const invoke = getTauriInvoke();
     if (!invoke) return;
     setInstalling(true);
+    if (dl.installKind === "runtime") {
+      setBusyNotice("Aplicando actualización interna y reiniciando Storia Studio…");
+      try {
+        await invoke("restart_server");
+      } catch (err) {
+        setInstalling(false);
+        setErrorMsg(err instanceof Error ? err.message : String(err));
+        setBusyNotice(null);
+      }
+      return;
+    }
+    if (!dl.localPath) {
+      setInstalling(false);
+      return;
+    }
     setBusyNotice("Instalando actualización y reiniciando Storia Studio…");
     try {
       const willRestart = await invoke<boolean>("install_update_and_restart", {
-        installerPath: localPath,
+        installerPath: dl.localPath,
       });
       if (!willRestart) {
         setInstalling(false);
@@ -108,8 +126,8 @@ export const UpdateBanner: React.FC = () => {
       return;
     }
 
-    if (download.phase === "ready" && download.localPath && download.channel === check.channel) {
-      await triggerInstallAfterDownload(download.localPath);
+    if (download.phase === "ready" && download.channel === check.channel) {
+      await triggerInstallAfterDownload(download);
       return;
     }
 
@@ -124,12 +142,12 @@ export const UpdateBanner: React.FC = () => {
         try {
           const latest = await studioApi.getUpdatesStatus();
           setStatus(latest);
-          if (latest.download.phase === "ready" && latest.download.localPath) {
+          if (latest.download.phase === "ready") {
             if (pollTimerRef.current !== null) {
               window.clearInterval(pollTimerRef.current);
               pollTimerRef.current = null;
             }
-            await triggerInstallAfterDownload(latest.download.localPath);
+            await triggerInstallAfterDownload(latest.download);
           } else if (latest.download.phase === "error") {
             if (pollTimerRef.current !== null) {
               window.clearInterval(pollTimerRef.current);
@@ -205,7 +223,11 @@ export const UpdateBanner: React.FC = () => {
         <div className="flex flex-col gap-1">
           <div className="flex items-center justify-between text-[10px] font-mono-code" style={{ color: "var(--text-secondary)" }}>
             <span>
-              {download.phase === "verifying" ? "Verificando SHA-256…" : "Descargando instalador…"}
+              {download.phase === "extracting"
+                ? "Aplicando archivos internos…"
+                : download.phase === "verifying"
+                  ? "Verificando SHA-256…"
+                  : "Descargando actualización…"}
             </span>
             <span>{download.percent}%</span>
           </div>

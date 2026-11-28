@@ -1107,7 +1107,7 @@ export interface RemotePlatformAsset {
   url: string;
   sha256: string;
   size: number;
-  kind: "nsis" | "msi" | "dmg" | "appimage" | "deb" | "rpm" | "launcher" | "other";
+  kind: "runtime" | "nsis" | "msi" | "dmg" | "appimage" | "deb" | "rpm" | "launcher" | "other";
 }
 
 export interface UpdateConfig {
@@ -1133,15 +1133,18 @@ export interface UpdateCheckResult {
     releaseUrl: string;
     notes: string;
   } | null;
+  runtime?: RemotePlatformAsset | null;
   asset: RemotePlatformAsset | null;
   error?: string;
 }
 
 export interface UpdateDownloadState {
-  phase: "idle" | "downloading" | "verifying" | "ready" | "error";
+  phase: "idle" | "downloading" | "verifying" | "extracting" | "ready" | "error";
+  installKind?: "runtime" | "installer";
   channel?: UpdateChannel;
   filename?: string;
   localPath?: string;
+  extractedRuntimeDir?: string;
   sha256?: string;
   bytesDownloaded: number;
   totalBytes: number;

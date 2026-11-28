@@ -108,3 +108,10 @@ export function resolveDefaultUpdatesDir(): string {
     ? path.resolve(override)
     : path.join(resolveDefaultModelsRootDir(), "updates");
 }
+
+export function resolveDefaultRuntimeReleasesDir(): string {
+  const override = process.env.STORIA_RUNTIME_RELEASES_DIR?.trim();
+  return override
+    ? path.resolve(override)
+    : path.join(resolveDefaultModelsRootDir(), "runtime-releases");
+}
